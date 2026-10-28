@@ -50,6 +50,32 @@ accentLine.BorderSizePixel = 0
 accentLine.Parent = menu
 Instance.new("UICorner", accentLine).CornerRadius = UDim.new(0, 2)
 
+-- ===== DRAG THE MENU (hold the title bar) =====
+local dragging, dragStart, startPos
+
+header.InputBegan:Connect(function(input)
+   if input.UserInputType == Enum.UserInputType.MouseButton1 then
+      dragging = true
+      dragStart = input.Position
+      startPos = menu.Position
+      input.Changed:Connect(function()
+         if input.UserInputState == Enum.UserInputState.End then
+            dragging = false
+         end
+      end)
+   end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+   if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+      local delta = input.Position - dragStart
+      menu.Position = UDim2.new(
+         startPos.X.Scale, startPos.X.Offset + delta.X,
+         startPos.Y.Scale, startPos.Y.Offset + delta.Y
+      )
+   end
+end)
+
 -- ===== + BUTTON =====
 local plus = Instance.new("TextButton")
 plus.Size = UDim2.new(0, HEADER_H, 0, HEADER_H)
@@ -139,7 +165,7 @@ for i, name in ipairs(TABS) do
    end)
 end
 
--- ===== SHOW/HIDE WITH RIGHT SHIFT =====
+-- ===== SHOW/HIDE WITH INSERT =====
 local menuOpen = true
 UserInputService.InputBegan:Connect(function(input, gpe)
    if gpe then return end
