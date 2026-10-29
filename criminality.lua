@@ -1,66 +1,71 @@
 --!nocheck
--- fatality UI framework
+-- fatality v2
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
-local Stats = game:GetService("Stats")
+local GuiService = game:GetService("GuiService")
 local player = Players.LocalPlayer
 
 local function build()
-    local playerGui = (gethui and gethui()) or player:WaitForChild("PlayerGui")
+    local playerGui = player:WaitForChild("PlayerGui")
 
-    -- ===== CONFIG =====
     local ACCENT = Color3.fromRGB(200, 55, 55)
     local BG = Color3.fromRGB(15, 15, 18)
     local BG2 = Color3.fromRGB(24, 24, 29)
+    local RAIL = Color3.fromRGB(11, 11, 14)
     local TEXT = Color3.fromRGB(220, 220, 225)
     local DIM = Color3.fromRGB(150, 150, 158)
     local OFF = Color3.fromRGB(45, 45, 52)
-    local STROKE = Color3.fromRGB(50, 50, 58)
-    local MENU_W, HEADER_H, TAB_H = 190, 38, 32
-    local CONTENT_W = 230
-    local TABS = { "Legit", "Rage", "Visuals", "Misc" }
-    local FULL_H = HEADER_H + #TABS * (TAB_H + 2)
-    local GAP = 8
+    local LINE = Color3.fromRGB(50, 50, 58)
 
-    local ACCENT_PRESETS = {
+    local PANEL_W, PANEL_H, HEADER_H, RAIL_W = 430, 270, 36, 104
+    local BODY_H = PANEL_H - HEADER_H
+    local TABS = { "Legit", "Rage", "Visuals", "Misc" }
+
+    local PRESETS = {
         Color3.fromRGB(200, 55, 55),
         Color3.fromRGB(70, 130, 230),
         Color3.fromRGB(80, 200, 120),
         Color3.fromRGB(170, 90, 230),
         Color3.fromRGB(240, 170, 50),
     }
+
+    local config, accentRefs = {}, {}
     local accentIndex = 1
-    local config = {}
-    local accentRefs = {}
 
     for _, n in ipairs({ "fatality", "fatality_wm" }) do
         local old = playerGui:FindFirstChild(n)
         if old then old:Destroy() end
     end
 
-    -- ===== HELPERS =====
-    local function round(obj, r)
+    local function round(o, r)
         local c = Instance.new("UICorner")
         c.CornerRadius = UDim.new(0, r)
-        c.Parent = obj
+        c.Parent = o
     end
 
-    local function stroke(obj)
+    local function outline(o, col)
         local s = Instance.new("UIStroke")
-        s.Color = STROKE
+        s.Color = col or LINE
         s.Thickness = 1
         s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-        s.Parent = obj
+        s.Parent = o
     end
 
-    local function viewport()
+    local function vp()
         local cam = workspace.CurrentCamera
-        return cam and cam.ViewportSize or Vector2.new(1920, 1080)
+        local v = cam and cam.ViewportSize or Vector2.new(0, 0)
+        if v.X < 1 or v.Y < 1 then v = playerGui.AbsoluteSize end
+        if v.X < 1 or v.Y < 1 then v = Vector2.new(1280, 720) end
+        return v
     end
 
-    -- ===== ROOT =====
+    local function insetY()
+        local tl = GuiService:GetGuiInset()
+        return tl and tl.Y or 36
+    end
+
     local gui = Instance.new("ScreenGui")
     gui.Name = "fatality"
     gui.ResetOnSpawn = false
@@ -68,73 +73,100 @@ local function build()
     gui.DisplayOrder = 999
     gui.Parent = playerGui
 
-    -- ===== MENU =====
-    local menu = Instance.new("Frame")
-    menu.Name = "menu"
-    menu.Size = UDim2.new(0, MENU_W, 0, HEADER_H)
-    menu.BackgroundColor3 = BG
-    menu.BorderSizePixel = 0
-    menu.ClipsDescendants = true
-    menu.Active = true
-    menu.Parent = gui
-    round(menu, 8)
-    stroke(menu)
+    -- ===== PANEL =====
+    local panel = Instance.new("Frame")
+    panel.Size = UDim2.fromOffset(PANEL_W, PANEL_H)
+    panel.BackgroundColor3 = BG
+    panel.BorderSizePixel = 0
+    panel.ClipsDescendants = true
+    panel.Active = true
+    panel.Parent = gui
+    round(panel, 8)
+    outline(panel)
 
-    local header = Instance.new("TextButton")
-    header.Size = UDim2.new(1, -HEADER_H, 0, HEADER_H)
+    local function place(x, y)
+        local v = vp()
+        local ins = insetY()
+        local h = expanded and PANEL_H or HEADER_H
+        panel.Position = UDim2.new(
+            0, math.clamp(x, 8, math.max(8, v.X - PANEL_W - 8)),
+            0, math.clamp(y, ins + 8, math.max(ins + 8, v.Y - h - 8))
+        )
+    end
+
+    -- ===== HEADER =====
+    local header = Instance.new("Frame")
+    header.Size = UDim2.new(1, 0, 0, HEADER_H)
     header.BackgroundTransparency = 1
-    header.AutoButtonColor = false
-    header.Text = "fatality"
-    header.TextColor3 = TEXT
-    header.TextXAlignment = Enum.TextXAlignment.Left
-    header.Font = Enum.Font.GothamBold
-    header.TextSize = 14
-    header.Parent = menu
-
-    local headerPad = Instance.new("UIPadding")
-    headerPad.PaddingLeft = UDim.new(0, 12)
-    headerPad.Parent = header
+    header.Active = true
+    header.Parent = panel
 
     local accentLine = Instance.new("Frame")
-    accentLine.Size = UDim2.new(0, 3, 0, HEADER_H - 14)
-    accentLine.Position = UDim2.new(0, 0, 0, 7)
+    accentLine.Size = UDim2.new(0, 3, 0, HEADER_H - 12)
+    accentLine.Position = UDim2.new(0, 0, 0, 6)
     accentLine.BackgroundColor3 = ACCENT
     accentLine.BorderSizePixel = 0
-    accentLine.Parent = menu
+    accentLine.Parent = header
     round(accentLine, 2)
     table.insert(accentRefs, function() accentLine.BackgroundColor3 = ACCENT end)
 
-    local plus = Instance.new("TextButton")
-    plus.Size = UDim2.new(0, HEADER_H, 0, HEADER_H)
-    plus.Position = UDim2.new(1, -HEADER_H, 0, 0)
-    plus.BackgroundTransparency = 1
-    plus.AutoButtonColor = false
-    plus.Text = "+"
-    plus.TextColor3 = TEXT
-    plus.Font = Enum.Font.GothamBold
-    plus.TextSize = 20
-    plus.Parent = menu
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -60, 1, 0)
+    title.Position = UDim2.fromOffset(14, 0)
+    title.BackgroundTransparency = 1
+    title.Text = "fatality"
+    title.TextColor3 = TEXT
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 14
+    title.Parent = header
 
-    local list = Instance.new("Frame")
-    list.Size = UDim2.new(1, 0, 0, #TABS * (TAB_H + 2))
-    list.Position = UDim2.new(0, 0, 0, HEADER_H)
-    list.BackgroundTransparency = 1
-    list.Parent = menu
-    local layout = Instance.new("UIListLayout")
-    layout.Padding = UDim.new(0, 2)
-    layout.Parent = list
+    local minBtn = Instance.new("TextButton")
+    minBtn.Size = UDim2.fromOffset(26, 22)
+    minBtn.Position = UDim2.new(1, -34, 0, 7)
+    minBtn.BackgroundColor3 = BG2
+    minBtn.AutoButtonColor = false
+    minBtn.Text = "-"
+    minBtn.TextColor3 = TEXT
+    minBtn.Font = Enum.Font.GothamBold
+    minBtn.TextSize = 16
+    minBtn.ZIndex = 3
+    minBtn.Parent = header
+    round(minBtn, 4)
 
-    -- ===== CONTENT WINDOW =====
+    local hr = Instance.new("Frame")
+    hr.Size = UDim2.new(1, 0, 0, 1)
+    hr.Position = UDim2.new(0, 0, 0, HEADER_H)
+    hr.BackgroundColor3 = LINE
+    hr.BorderSizePixel = 0
+    hr.Parent = panel
+
+    -- ===== BODY =====
+    local body = Instance.new("Frame")
+    body.Size = UDim2.new(1, 0, 0, BODY_H)
+    body.Position = UDim2.new(0, 0, 0, HEADER_H + 1)
+    body.BackgroundTransparency = 1
+    body.Parent = panel
+
+    local rail = Instance.new("Frame")
+    rail.Size = UDim2.new(0, RAIL_W, 1, 0)
+    rail.BackgroundColor3 = RAIL
+    rail.BorderSizePixel = 0
+    rail.Parent = body
+
+    local railLayout = Instance.new("UIListLayout")
+    railLayout.Padding = UDim.new(0, 1)
+    railLayout.Parent = rail
+
+    local railPad = Instance.new("UIPadding")
+    railPad.PaddingTop = UDim.new(0, 8)
+    railPad.Parent = rail
+
     local content = Instance.new("Frame")
-    content.Name = "content"
-    content.Size = UDim2.new(0, CONTENT_W, 0, FULL_H)
-    content.BackgroundColor3 = BG
-    content.BorderSizePixel = 0
-    content.Visible = false
-    content.Active = true
-    content.Parent = gui
-    round(content, 8)
-    stroke(content)
+    content.Size = UDim2.new(1, -RAIL_W, 1, 0)
+    content.Position = UDim2.fromOffset(RAIL_W, 0)
+    content.BackgroundTransparency = 1
+    content.Parent = body
 
     local contentPad = Instance.new("UIPadding")
     contentPad.PaddingTop = UDim.new(0, 10)
@@ -143,29 +175,10 @@ local function build()
     contentPad.PaddingBottom = UDim.new(0, 10)
     contentPad.Parent = content
 
-    local function syncContent()
-        local vp = viewport()
-        local x, y = menu.Position.X.Offset, menu.Position.Y.Offset
-        if x + MENU_W + GAP + CONTENT_W <= vp.X then
-            content.Position = UDim2.new(0, x + MENU_W + GAP, 0, y)
-        else
-            content.Position = UDim2.new(0, x, 0, y + HEADER_H + 4)
-        end
-    end
-
-    local function placeMenu(x, y)
-        local vp = viewport()
-        menu.Position = UDim2.new(
-            0, math.clamp(x, 0, math.max(0, vp.X - MENU_W)),
-            0, math.clamp(y, 0, math.max(0, vp.Y - FULL_H))
-        )
-        syncContent()
-    end
-
     -- ===== CONTROLS =====
     local function addLabel(page, text, dim)
         local l = Instance.new("TextLabel")
-        l.Size = UDim2.new(1, 0, 0, dim and 16 or 20)
+        l.Size = UDim2.new(1, 0, 0, dim and 15 or 18)
         l.BackgroundTransparency = 1
         l.Text = text
         l.TextColor3 = dim and DIM or TEXT
@@ -179,7 +192,7 @@ local function build()
     local function addDivider(page)
         local d = Instance.new("Frame")
         d.Size = UDim2.new(1, 0, 0, 1)
-        d.BackgroundColor3 = STROKE
+        d.BackgroundColor3 = LINE
         d.BorderSizePixel = 0
         d.Parent = page
     end
@@ -187,7 +200,7 @@ local function build()
     local function addToggle(page, label, default, onChange)
         local state = default and true or false
         local row = Instance.new("Frame")
-        row.Size = UDim2.new(1, 0, 0, 30)
+        row.Size = UDim2.new(1, 0, 0, 28)
         row.BackgroundColor3 = BG2
         row.BorderSizePixel = 0
         row.Parent = page
@@ -195,7 +208,7 @@ local function build()
 
         local lbl = Instance.new("TextLabel")
         lbl.Size = UDim2.new(1, -54, 1, 0)
-        lbl.Position = UDim2.new(0, 10, 0, 0)
+        lbl.Position = UDim2.fromOffset(10, 0)
         lbl.BackgroundTransparency = 1
         lbl.Text = label
         lbl.TextColor3 = TEXT
@@ -205,8 +218,8 @@ local function build()
         lbl.Parent = row
 
         local btn = Instance.new("TextButton")
-        btn.Size = UDim2.fromOffset(34, 18)
-        btn.Position = UDim2.new(1, -44, 0.5, -9)
+        btn.Size = UDim2.fromOffset(32, 17)
+        btn.Position = UDim2.new(1, -42, 0.5, -8)
         btn.BackgroundColor3 = state and ACCENT or OFF
         btn.Text = ""
         btn.AutoButtonColor = false
@@ -214,8 +227,8 @@ local function build()
         round(btn, 9)
 
         local knob = Instance.new("Frame")
-        knob.Size = UDim2.fromOffset(14, 14)
-        knob.Position = UDim2.new(0, state and 18 or 2, 0.5, -7)
+        knob.Size = UDim2.fromOffset(13, 13)
+        knob.Position = UDim2.new(0, state and 17 or 2, 0.5, -6)
         knob.BackgroundColor3 = Color3.fromRGB(235, 235, 240)
         knob.Parent = btn
         round(knob, 7)
@@ -223,8 +236,8 @@ local function build()
         local function paint()
             config[label] = state
             btn.BackgroundColor3 = state and ACCENT or OFF
-            TweenService:Create(knob, TweenInfo.new(0.12), {
-                Position = UDim2.new(0, state and 18 or 2, 0.5, -7),
+            TweenService:Create(knob, TweenInfo.new(0.1), {
+                Position = UDim2.new(0, state and 17 or 2, 0.5, -6),
             }):Play()
             if onChange then task.spawn(onChange, state) end
         end
@@ -248,15 +261,15 @@ local function build()
     local function addSlider(page, label, min, max, default, onChange)
         local value = math.clamp(default, min, max)
         local row = Instance.new("Frame")
-        row.Size = UDim2.new(1, 0, 0, 44)
+        row.Size = UDim2.new(1, 0, 0, 42)
         row.BackgroundColor3 = BG2
         row.BorderSizePixel = 0
         row.Parent = page
         round(row, 5)
 
         local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(1, -50, 0, 18)
-        lbl.Position = UDim2.new(0, 10, 0, 4)
+        lbl.Size = UDim2.new(1, -50, 0, 17)
+        lbl.Position = UDim2.fromOffset(10, 4)
         lbl.BackgroundTransparency = 1
         lbl.Text = label
         lbl.TextColor3 = TEXT
@@ -266,7 +279,7 @@ local function build()
         lbl.Parent = row
 
         local val = Instance.new("TextLabel")
-        val.Size = UDim2.new(0, 40, 0, 18)
+        val.Size = UDim2.new(0, 40, 0, 17)
         val.Position = UDim2.new(1, -50, 0, 4)
         val.BackgroundTransparency = 1
         val.Text = tostring(value)
@@ -277,8 +290,8 @@ local function build()
         val.Parent = row
 
         local bar = Instance.new("TextButton")
-        bar.Size = UDim2.new(1, -20, 0, 6)
-        bar.Position = UDim2.new(0, 10, 0, 30)
+        bar.Size = UDim2.new(1, -20, 0, 5)
+        bar.Position = UDim2.fromOffset(10, 28)
         bar.BackgroundColor3 = OFF
         bar.Text = ""
         bar.AutoButtonColor = false
@@ -294,122 +307,101 @@ local function build()
 
         table.insert(accentRefs, function() fill.BackgroundColor3 = ACCENT end)
 
-        local function apply(alpha)
-            value = math.floor(min + (max - min) * alpha + 0.5)
-            fill.Size = UDim2.new(alpha, 0, 1, 0)
+        local function apply(a)
+            value = math.floor(min + (max - min) * a + 0.5)
+            fill.Size = UDim2.new(a, 0, 1, 0)
             val.Text = tostring(value)
             config[label] = value
             if onChange then task.spawn(onChange, value) end
         end
 
-        local dragConn, endConn
-        local function begin(input)
-            if input.UserInputType ~= Enum.UserInputType.MouseButton1
-                and input.UserInputType ~= Enum.UserInputType.Touch then return end
-            if dragConn then dragConn:Disconnect() end
-            if endConn then endConn:Disconnect() end
+        local moveConn, upConn
+        bar.InputBegan:Connect(function(i)
+            if i.UserInputType ~= Enum.UserInputType.MouseButton1
+                and i.UserInputType ~= Enum.UserInputType.Touch then return end
+            if moveConn then moveConn:Disconnect() end
+            if upConn then upConn:Disconnect() end
 
-            local function set(pos)
-                apply(math.clamp((pos.X - bar.AbsolutePosition.X) / math.max(1, bar.AbsoluteSize.X), 0, 1))
+            local function set(p)
+                apply(math.clamp((p.X - bar.AbsolutePosition.X) / math.max(1, bar.AbsoluteSize.X), 0, 1))
             end
-            set(input.Position)
+            set(i.Position)
 
-            dragConn = UIS.InputChanged:Connect(function(m)
+            moveConn = UIS.InputChanged:Connect(function(m)
                 if m.UserInputType == Enum.UserInputType.MouseMovement
-                    or m.UserInputType == Enum.UserInputType.Touch then
-                    set(m.Position)
-                end
+                    or m.UserInputType == Enum.UserInputType.Touch then set(m.Position) end
             end)
-            endConn = UIS.InputEnded:Connect(function(m)
+            upConn = UIS.InputEnded:Connect(function(m)
                 if m.UserInputType ~= Enum.UserInputType.MouseButton1
                     and m.UserInputType ~= Enum.UserInputType.Touch then return end
-                if dragConn then dragConn:Disconnect() end
-                if endConn then endConn:Disconnect() end
-                dragConn, endConn = nil, nil
+                if moveConn then moveConn:Disconnect() end
+                if upConn then upConn:Disconnect() end
+                moveConn, upConn = nil, nil
             end)
-        end
-
-        bar.InputBegan:Connect(begin)
+        end)
 
         config[label] = value
         return {
             Get = function() return value end,
-            Set = function(v)
-                apply(math.clamp((v - min) / (max - min), 0, 1))
-            end,
+            Set = function(v) apply(math.clamp((v - min) / (max - min), 0, 1)) end,
         }
     end
 
     local function addButton(page, label, onClick)
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(1, 0, 0, 28)
-        btn.BackgroundColor3 = BG2
-        btn.AutoButtonColor = false
-        btn.Text = label
-        btn.TextColor3 = TEXT
-        btn.Font = Enum.Font.GothamMedium
-        btn.TextSize = 12
-        btn.Parent = page
-        round(btn, 5)
-
-        btn.MouseEnter:Connect(function() btn.BackgroundColor3 = OFF end)
-        btn.MouseLeave:Connect(function() btn.BackgroundColor3 = BG2 end)
-        btn.MouseButton1Click:Connect(function()
-            if onClick then task.spawn(onClick) end
-        end)
-        return btn
+        local b = Instance.new("TextButton")
+        b.Size = UDim2.new(1, 0, 0, 26)
+        b.BackgroundColor3 = BG2
+        b.AutoButtonColor = false
+        b.Text = label
+        b.TextColor3 = TEXT
+        b.Font = Enum.Font.GothamMedium
+        b.TextSize = 12
+        b.Parent = page
+        round(b, 5)
+        b.MouseEnter:Connect(function() b.BackgroundColor3 = OFF end)
+        b.MouseLeave:Connect(function() b.BackgroundColor3 = BG2 end)
+        b.MouseButton1Click:Connect(function() if onClick then task.spawn(onClick) end end)
+        return b
     end
 
-    -- ===== TABS + PAGES =====
-    local tabButtons, pages = {}, {}
-    local activeTab = 1
+    -- ===== TABS =====
+    local tabBtns, pages = {}, {}
+    local current = 1
 
     local function selectTab(i)
-        activeTab = i
-        for idx, b in ipairs(tabButtons) do
-            b.paint(idx == i)
-            pages[idx].Visible = (idx == i)
+        current = i
+        for idx, b in ipairs(tabBtns) do
+            b.TextColor3 = idx == i and TEXT or DIM
+            b.BackgroundColor3 = idx == i and BG2 or RAIL
+            pages[idx].Visible = idx == i
         end
     end
 
     for i, name in ipairs(TABS) do
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(1, -12, 0, TAB_H)
-        btn.Position = UDim2.new(0, 12, 0, 0)
-        btn.BackgroundTransparency = 1
-        btn.AutoButtonColor = false
-        btn.Text = name
-        btn.TextColor3 = DIM
-        btn.TextXAlignment = Enum.TextXAlignment.Left
-        btn.Font = Enum.Font.GothamMedium
-        btn.TextSize = 12
-        btn.Parent = list
+        local b = Instance.new("TextButton")
+        b.Size = UDim2.new(1, 0, 0, 30)
+        b.BackgroundColor3 = RAIL
+        b.AutoButtonColor = false
+        b.Text = name
+        b.TextColor3 = DIM
+        b.TextXAlignment = Enum.TextXAlignment.Left
+        b.Font = Enum.Font.GothamMedium
+        b.TextSize = 12
+        b.Parent = rail
 
-        local ind = Instance.new("Frame")
-        ind.Size = UDim2.new(0, 2, 0, TAB_H - 14)
-        ind.Position = UDim2.new(0, -12, 0, 7)
-        ind.BackgroundColor3 = ACCENT
-        ind.BorderSizePixel = 0
-        ind.Visible = false
-        ind.Parent = btn
-        round(ind, 1)
+        local pad = Instance.new("UIPadding")
+        pad.PaddingLeft = UDim.new(0, 14)
+        pad.Parent = b
 
-        table.insert(accentRefs, function() ind.BackgroundColor3 = ACCENT end)
-
-        function btn.paint(active)
-            btn.TextColor3 = active and TEXT or DIM
-            ind.Visible = active
-        end
-
-        btn.MouseButton1Click:Connect(function() selectTab(i) end)
-        tabButtons[i] = btn
+        b.MouseButton1Click:Connect(function() selectTab(i) end)
+        tabBtns[i] = b
 
         local page = Instance.new("ScrollingFrame")
         page.Size = UDim2.new(1, 0, 1, 0)
         page.BackgroundTransparency = 1
         page.BorderSizePixel = 0
         page.ScrollBarThickness = 3
-        page.ScrollBarImageColor3 = STROKE
+        page.ScrollBarImageColor3 = LINE
         page.ScrollingDirection = Enum.ScrollingDirection.Y
         page.ElasticBehavior = Enum.ElasticBehavior.Never
         page.CanvasSize = UDim2.new(0, 0, 0, 0)
@@ -418,16 +410,16 @@ local function build()
         page.Parent = content
 
         local pl = Instance.new("UIListLayout")
-        pl.Padding = UDim.new(0, 6)
+        pl.Padding = UDim.new(0, 5)
         pl.Parent = page
 
         pages[i] = page
     end
 
-    -- ===== PAGE CONTENT =====
-    local function humanoid()
-        local char = player.Character
-        return char and char:FindFirstChildWhichIsA("Humanoid")
+    -- ===== CONTENT =====
+    local function hum()
+        local c = player.Character
+        return c and c:FindFirstChildWhichIsA("Humanoid")
     end
 
     local jumpConn
@@ -460,171 +452,180 @@ local function build()
     addToggle(pages[3], "Fullbright", false, function(on)
         local lighting = game:GetService("Lighting")
         lighting.Brightness = on and 3 or 2
-        lighting.ClockTime = on and 14 or lighting.ClockTime
     end)
 
     addLabel(pages[4], "Character", false)
     addSlider(pages[4], "WalkSpeed", 16, 300, 16, function(v)
-        local h = humanoid()
+        local h = hum()
         if h then h.WalkSpeed = v end
     end)
     addSlider(pages[4], "JumpPower", 50, 500, 50, function(v)
-        local h = humanoid()
+        local h = hum()
         if h then h.JumpPower = v end
     end)
     addToggle(pages[4], "Infinite Jump", false, function(on)
         if jumpConn then jumpConn:Disconnect() jumpConn = nil end
         if on then
             jumpConn = UIS.JumpRequest:Connect(function()
-                local h = humanoid()
+                local h = hum()
                 if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end
             end)
         end
     end)
-    addDivider(pages[4], "Accent", false)
+    addDivider(pages[4])
     addLabel(pages[4], "Accent", false)
 
-    local swatchRow = Instance.new("Frame")
-    swatchRow.Size = UDim2.new(1, 0, 0, 26)
-    swatchRow.BackgroundTransparency = 1
-    swatchRow.Parent = pages[4]
-    local swatchLayout = Instance.new("UIListLayout")
-    swatchLayout.FillDirection = Enum.FillDirection.Horizontal
-    swatchLayout.Padding = UDim.new(0, 6)
-    swatchLayout.Parent = swatchRow
+    local swRow = Instance.new("Frame")
+    swRow.Size = UDim2.new(1, 0, 0, 24)
+    swRow.BackgroundTransparency = 1
+    swRow.Parent = pages[4]
+    local swL = Instance.new("UIListLayout")
+    swL.FillDirection = Enum.FillDirection.Horizontal
+    swL.Padding = UDim.new(0, 6)
+    swL.Parent = swRow
 
     local function applyAccent(c)
         ACCENT = c
         for _, f in ipairs(accentRefs) do pcall(f) end
     end
 
-    for i, c in ipairs(ACCENT_PRESETS) do
+    for i, c in ipairs(PRESETS) do
         local sw = Instance.new("TextButton")
-        sw.Size = UDim2.fromOffset(26, 26)
+        sw.Size = UDim2.fromOffset(24, 24)
         sw.BackgroundColor3 = c
         sw.Text = ""
         sw.AutoButtonColor = false
-        sw.Parent = swatchRow
-        round(sw, 13)
+        sw.Parent = swRow
+        round(sw, 12)
         sw.MouseButton1Click:Connect(function()
             accentIndex = i
             applyAccent(c)
         end)
     end
 
-    addButton(pages[4], "Unload", function()
-        gui:Destroy()
-    end)
+    addButton(pages[4], "Unload", function() gui:Destroy() end)
 
     -- ===== WATERMARK =====
     local wm = Instance.new("Frame")
     wm.Name = "fatality_wm"
-    wm.Size = UDim2.new(0, 168, 0, 42)
-    wm.Position = UDim2.new(0, 20, 1, -62)
+    wm.Size = UDim2.fromOffset(160, 40)
+    wm.Position = UDim2.new(0, 20, 1, -60)
     wm.BackgroundColor3 = BG
-    wm.BackgroundTransparency = 0.15
+    wm.BackgroundTransparency = 0.2
     wm.BorderSizePixel = 0
     wm.Parent = gui
     round(wm, 6)
-    stroke(wm)
+    outline(wm)
 
     local wmBar = Instance.new("Frame")
-    wmBar.Size = UDim2.new(0, 3, 0, 26)
-    wmBar.Position = UDim2.new(0, 0, 0, 8)
+    wmBar.Size = UDim2.new(0, 3, 0, 24)
+    wmBar.Position = UDim2.fromOffset(0, 8)
     wmBar.BackgroundColor3 = ACCENT
     wmBar.BorderSizePixel = 0
     wmBar.Parent = wm
     round(wmBar, 2)
     table.insert(accentRefs, function() wmBar.BackgroundColor3 = ACCENT end)
 
-    local wmTitle = Instance.new("TextLabel")
-    wmTitle.Size = UDim2.new(1, -16, 0, 18)
-    wmTitle.Position = UDim2.new(0, 12, 0, 5)
-    wmTitle.BackgroundTransparency = 1
-    wmTitle.Text = "fatality"
-    wmTitle.TextColor3 = TEXT
-    wmTitle.TextXAlignment = Enum.TextXAlignment.Left
-    wmTitle.Font = Enum.Font.GothamBold
-    wmTitle.TextSize = 12
-    wmTitle.Parent = wm
+    local wmT = Instance.new("TextLabel")
+    wmT.Size = UDim2.new(1, -16, 0, 16)
+    wmT.Position = UDim2.fromOffset(12, 4)
+    wmT.BackgroundTransparency = 1
+    wmT.Text = "fatality"
+    wmT.TextColor3 = TEXT
+    wmT.TextXAlignment = Enum.TextXAlignment.Left
+    wmT.Font = Enum.Font.GothamBold
+    wmT.TextSize = 11
+    wmT.Parent = wm
 
-    local wmStats = Instance.new("TextLabel")
-    wmStats.Size = UDim2.new(1, -16, 0, 14)
-    wmStats.Position = UDim2.new(0, 12, 0, 22)
-    wmStats.BackgroundTransparency = 1
-    wmStats.Text = "-- fps  |  0s"
-    wmStats.TextColor3 = DIM
-    wmStats.TextXAlignment = Enum.TextXAlignment.Left
-    wmStats.Font = Enum.Font.Gotham
-    wmStats.TextSize = 10
-    wmStats.Parent = wm
+    local wmS = Instance.new("TextLabel")
+    wmS.Size = UDim2.new(1, -16, 0, 13)
+    wmS.Position = UDim2.fromOffset(12, 20)
+    wmS.BackgroundTransparency = 1
+    wmS.Text = "-- fps"
+    wmS.TextColor3 = DIM
+    wmS.TextXAlignment = Enum.TextXAlignment.Left
+    wmS.Font = Enum.Font.Gotham
+    wmS.TextSize = 10
+    wmS.Parent = wm
 
-    local frames, elapsed, started = 0, 0, os.clock()
+    local fCount, fTime = 0, 0
     RunService.RenderStepped:Connect(function(dt)
         if not gui.Parent then return end
-        frames = frames + 1
-        elapsed = elapsed + dt
-        if elapsed >= 0.5 then
-            wmStats.Text = ("%d fps  |  %ds"):format(
-                math.floor(frames / elapsed + 0.5),
-                math.floor(os.clock() - started)
-            )
-            frames, elapsed = 0, 0
+        fCount, fTime = fCount + 1, fTime + dt
+        if fTime >= 0.5 then
+            wmS.Text = string.format("%d fps", math.floor(fCount / fTime + 0.5))
+            fCount, fTime = 0, 0
         end
     end)
 
-    -- ===== DRAGGING =====
-    local dragConn, endConn
+    -- ===== DRAG =====
+    local moveConn, upConn
 
-    local function isDragInput(i)
+    local function isPress(i)
         return i.UserInputType == Enum.UserInputType.MouseButton1
             or i.UserInputType == Enum.UserInputType.Touch
     end
 
-    header.InputBegan:Connect(function(input)
-        if not isDragInput(input) then return end
-        if dragConn then dragConn:Disconnect() end
-        if endConn then endConn:Disconnect() end
+    header.InputBegan:Connect(function(i)
+        if not isPress(i) then return end
+        if moveConn then moveConn:Disconnect() end
+        if upConn then upConn:Disconnect() end
 
-        local dragStart = input.Position
-        local startX = menu.Position.X.Offset
-        local startY = menu.Position.Y.Offset
+        local origin = i.Position
+        local sx, sy = panel.Position.X.Offset, panel.Position.Y.Offset
 
-        local function move(pos)
-            placeMenu(startX + (pos.X - dragStart.X), startY + (pos.Y - dragStart.Y))
-        end
-
-        dragConn = UIS.InputChanged:Connect(function(m)
+        moveConn = UIS.InputChanged:Connect(function(m)
             if m.UserInputType == Enum.UserInputType.MouseMovement
                 or m.UserInputType == Enum.UserInputType.Touch then
-                move(m.Position)
+                place(sx + (m.Position.X - origin.X), sy + (m.Position.Y - origin.Y))
             end
         end)
-        endConn = UIS.InputEnded:Connect(function(m)
-            if not isDragInput(m) then return end
-            if dragConn then dragConn:Disconnect() end
-            if endConn then endConn:Disconnect() end
-            dragConn, endConn = nil, nil
+        upConn = UIS.InputEnded:Connect(function(m)
+            if not isPress(m) then return end
+            if moveConn then moveConn:Disconnect() end
+            if upConn then upConn:Disconnect() end
+            moveConn, upConn = nil, nil
         end)
     end)
 
-    -- ===== EXPAND =====
-    local expanded = false
+    -- ===== MINIMIZE =====
+    local expanded = true
 
     local function setExpanded(v)
         expanded = v
-        plus.Text = expanded and "−" or "+"
-        content.Visible = expanded
-        if expanded then syncContent() end
-        TweenService:Create(menu, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            Size = UDim2.new(0, MENU_W, 0, expanded and FULL_H or HEADER_H),
+        minBtn.Text = expanded and "-" or "+"
+        body.Visible = expanded
+        hr.Visible = expanded
+        TweenService:Create(panel, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            Size = UDim2.fromOffset(PANEL_W, expanded and PANEL_H or HEADER_H),
         }):Play()
+        place(panel.Position.X.Offset, panel.Position.Y.Offset)
     end
 
-    plus.MouseButton1Click:Connect(function() setExpanded(not expanded) end)
+    minBtn.MouseButton1Click:Connect(function() setExpanded(not expanded) end)
+
+    -- ===== KEYS =====
+    UIS.InputBegan:Connect(function(i, gp)
+        if gp then return end
+        if i.KeyCode == Enum.KeyCode.K then
+            gui.Enabled = not gui.Enabled
+        elseif i.KeyCode == Enum.KeyCode.RightShift then
+            place(60, 180)
+        end
+    end)
 
     -- ===== START =====
-    placeMenu(60, 200)
+    place(60, 180)
+    task.spawn(function()
+        for _ = 1, 60 do
+            local v = vp()
+            if v.X > 1 and v.Y > 1 then
+                place(60, 180)
+                break
+            end
+            task.wait(0.1)
+        end
+    end)
     selectTab(1)
 end
 
