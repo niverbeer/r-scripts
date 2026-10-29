@@ -1128,7 +1128,7 @@ addAdjuster(
     function(value)
         AntiAim.SpinSpeed = value
     end,
-    30, 720, 30
+    30, 1650, 30
 )
 
 addToggle(
