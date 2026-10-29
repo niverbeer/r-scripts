@@ -366,11 +366,9 @@ local function esp(state)
 end
 
 ----------------------------------------------------------------
--- STUDIO NPC AIM-ASSIST TEST
---
--- Only runs in Roblox Studio.
--- Targets NPC models tagged "AimTestTarget".
--- Tag your own NPC models using CollectionService.
+-- PLAYER AIM ASSIST
+-- Intended for your own Roblox game's combat system.
+-- Uses players who are valid targets in that game.
 ----------------------------------------------------------------
 
 local AimTest = {
@@ -396,7 +394,10 @@ local circle = Instance.new("Frame")
 circle.Name = "FOVCircle"
 circle.AnchorPoint = Vector2.new(0.5, 0.5)
 circle.Position = UDim2.fromScale(0.5, 0.5)
-circle.Size = UDim2.fromOffset(AimTest.FOV * 2, AimTest.FOV * 2)
+circle.Size = UDim2.fromOffset(
+    AimTest.FOV * 2,
+    AimTest.FOV * 2
+)
 circle.BackgroundTransparency = 1
 circle.Visible = false
 circle.Parent = aimGui
@@ -411,57 +412,56 @@ circleStroke.Thickness = 1.5
 circleStroke.Transparency = 0.1
 circleStroke.Parent = circle
 
-local function getTargetPart(model)
-    local partName = AimTest.TargetPart
+local function getTargetPart(character)
     local part
 
-    if partName == "Head" then
-        part = model:FindFirstChild("Head")
-    elseif partName == "Chest" then
-        part = model:FindFirstChild("UpperTorso")
-            or model:FindFirstChild("Torso")
-            or model:FindFirstChild("HumanoidRootPart")
-    elseif partName == "Legs" then
-        part = model:FindFirstChild("LeftLowerLeg")
-            or model:FindFirstChild("Left Leg")
-            or model:FindFirstChild("RightLowerLeg")
-            or model:FindFirstChild("Right Leg")
+    if AimTest.TargetPart == "Head" then
+        part = character:FindFirstChild("Head")
+    elseif AimTest.TargetPart == "Chest" then
+        part = character:FindFirstChild("UpperTorso")
+            or character:FindFirstChild("Torso")
+            or character:FindFirstChild("HumanoidRootPart")
+    elseif AimTest.TargetPart == "Legs" then
+        part = character:FindFirstChild("LeftLowerLeg")
+            or character:FindFirstChild("Left Leg")
+            or character:FindFirstChild("RightLowerLeg")
+            or character:FindFirstChild("Right Leg")
     end
 
     if part and part:IsA("BasePart") then
         return part
     end
 
-    local root = model:FindFirstChild("HumanoidRootPart")
-
-    if root and root:IsA("BasePart") then
-        return root
-    end
-
-    return nil
+    return character:FindFirstChild("HumanoidRootPart")
 end
 
 local function getAimTarget()
     local camera = workspace.CurrentCamera
-    if not camera then return nil end
+    if not camera then
+        return nil
+    end
 
     local center = camera.ViewportSize / 2
     local bestDistance = AimTest.FOV
-    local bestTarget
+    local bestTarget = nil
 
-    for _, model in ipairs(
-        CollectionService:GetTagged("AimTestTarget")
-    ) do
-        if model:IsA("Model") and model ~= player.Character then
-            local humanoid = model:FindFirstChildOfClass("Humanoid")
-            local part = getTargetPart(model)
+    for _, targetPlayer in ipairs(Players:GetPlayers()) do
+        if targetPlayer ~= player then
+            local character = targetPlayer.Character
+            local humanoid = character
+                and character:FindFirstChildOfClass("Humanoid")
+            local part = character and getTargetPart(character)
 
             if humanoid and humanoid.Health > 0 and part then
                 local screenPos, onScreen =
                     camera:WorldToViewportPoint(part.Position)
 
                 if onScreen and screenPos.Z > 0 then
-                    local point = Vector2.new(screenPos.X, screenPos.Y)
+                    local point = Vector2.new(
+                        screenPos.X,
+                        screenPos.Y
+                    )
+
                     local distance = (point - center).Magnitude
 
                     if distance < bestDistance then
@@ -474,10 +474,6 @@ local function getAimTarget()
     end
 
     return bestTarget
-end
-
-local function isAimKey(input)
-    return input.KeyCode == AimTest.KeyCode
 end
 
 UIS.InputBegan:Connect(function(input, processed)
@@ -498,28 +494,26 @@ UIS.InputBegan:Connect(function(input, processed)
 
     if not processed
         and input.UserInputType == Enum.UserInputType.Keyboard
-        and isAimKey(input) then
+        and input.KeyCode == AimTest.KeyCode then
 
         aiming = true
     end
 end)
 
 UIS.InputEnded:Connect(function(input)
-    if isAimKey(input) then
+    if input.KeyCode == AimTest.KeyCode then
         aiming = false
     end
 end)
 
 RunService.RenderStepped:Connect(function(dt)
-    local inStudio = RunService:IsStudio()
-
-    circle.Visible = inStudio and AimTest.Enabled
+    circle.Visible = AimTest.Enabled
     circle.Size = UDim2.fromOffset(
         AimTest.FOV * 2,
         AimTest.FOV * 2
     )
 
-    if not inStudio or not AimTest.Enabled or not aiming then
+    if not AimTest.Enabled or not aiming then
         return
     end
 
@@ -536,7 +530,10 @@ RunService.RenderStepped:Connect(function(dt)
             -AimTest.Smoothness * dt
         )
 
-        camera.CFrame = camera.CFrame:Lerp(desired, alpha)
+        camera.CFrame = camera.CFrame:Lerp(
+            desired,
+            math.clamp(alpha, 0, 1)
+        )
     end
 end)
 
@@ -950,7 +947,7 @@ local function build()
 
     addToggle(
         pages["Legit"],
-        "NPC Aim Assist (Studio)",
+        "Aim Assist",
         false,
         function(enabled)
             AimTest.Enabled = enabled
