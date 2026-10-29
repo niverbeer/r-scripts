@@ -65,16 +65,24 @@ local function toggleChams(state)
 end
 
 ----------------------------------------------------------------
--- ESP (2D boxes for every Humanoid: players + NPCs)
+-- ESP (2D boxes for other players only, optimized)
 ----------------------------------------------------------------
 local PLAYER_COL = Color3.fromRGB(200, 55, 55)
-local NPC_COL = Color3.fromRGB(255, 170, 50)
+local HP_LOW = Color3.fromRGB(220, 60, 60)
+local HP_HIGH = Color3.fromRGB(80, 220, 100)
+
+local MAX_DIST = 1500        -- players farther than this get no box
+local TEXT_INTERVAL = 0.15   -- how often distance/health are refreshed (seconds)
+local TOP_OFFSET = Vector3.new(0, 2.7, 0)
+local BOTTOM_OFFSET = Vector3.new(0, 3.1, 0)
 
 local espState = {
 	gui = nil,
-	entities = {}, -- [model] = { humanoid, box, name, dist, hpFill, isPlayer }
+	session = 0,
+	entities = {}, -- [character] = entry
 	conns = {},
 }
+local lastTextUpdate = 0
 
 local function removeEntry(model)
 	local e = espState.entities[model]
@@ -84,10 +92,7 @@ local function removeEntry(model)
 	end
 end
 
-local function createEntry(model, humanoid)
-	local plr = Players:GetPlayerFromCharacter(model)
-	local col = plr and PLAYER_COL or NPC_COL
-
+local function createEntry(plr, humanoid, root)
 	local box = Instance.new("Frame")
 	box.BackgroundTransparency = 1
 	box.BorderSizePixel = 0
@@ -95,7 +100,7 @@ local function createEntry(model, humanoid)
 	box.Parent = espState.gui
 
 	local stroke = Instance.new("UIStroke")
-	stroke.Color = col
+	stroke.Color = PLAYER_COL
 	stroke.Thickness = 1.5
 	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	stroke.Parent = box
@@ -104,8 +109,8 @@ local function createEntry(model, humanoid)
 	nameLbl.Size = UDim2.new(1, 60, 0, 14)
 	nameLbl.Position = UDim2.new(0, -30, 0, -16)
 	nameLbl.BackgroundTransparency = 1
-	nameLbl.Text = plr and plr.Name or model.Name
-	nameLbl.TextColor3 = col
+	nameLbl.Text = plr.Name
+	nameLbl.TextColor3 = PLAYER_COL
 	nameLbl.TextStrokeTransparency = 0
 	nameLbl.Font = Enum.Font.GothamBold
 	nameLbl.TextSize = 12
@@ -133,19 +138,20 @@ local function createEntry(model, humanoid)
 	hpFill.AnchorPoint = Vector2.new(0, 1)
 	hpFill.Position = UDim2.new(0, 0, 1, 0)
 	hpFill.Size = UDim2.new(1, 0, 1, 0)
-	hpFill.BackgroundColor3 = Color3.fromRGB(80, 220, 100)
+	hpFill.BackgroundColor3 = HP_HIGH
 	hpFill.BorderSizePixel = 0
 	hpFill.Parent = hpBg
 
-	return { humanoid = humanoid, box = box, name = nameLbl, dist = distLbl, hpFill = hpFill }
-end
-
-local function trackModel(model)
-	if espState.entities[model] then return end
-	if not model:IsA("Model") or model == player.Character then return end
-	local hum = model:FindFirstChildOfClass("Humanoid")
-	if not hum then return end
-	espState.entities[model] = createEntry(model, hum)
+	return {
+		humanoid = humanoid,
+		root = root,
+		box = box,
+		dist = distLbl,
+		hpFill = hpFill,
+		visible = false,
+		lastDist = -1,
+		lastHp = -1,
+	}
 end
 
 local function updateESP()
@@ -154,63 +160,88 @@ local function updateESP()
 
 	local myChar = player.Character
 	local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+	local origin = myRoot and myRoot.Position or cam.CFrame.Position
+
+	-- throttle the expensive part (text + health bar)
+	local now = os.clock()
+	local doText = (now - lastTextUpdate) >= TEXT_INTERVAL
+	if doText then lastTextUpdate = now end
 
 	for model, e in pairs(espState.entities) do
-		if not model:IsDescendantOf(workspace) then
+		local root = e.root
+
+		if not model.Parent or not root.Parent then
 			removeEntry(model)
-		elseif model == myChar or e.humanoid.Health <= 0 then
-			e.box.Visible = false
 		else
-			local cf, size = model:GetBoundingBox()
-			local center = cam:WorldToViewportPoint(cf.Position)
+			local pos = root.Position
+			local dist = (origin - pos).Magnitude
+			local show = false
 
-			if center.Z <= 0 then
-				e.box.Visible = false
-			else
-				local minX, minY, maxX, maxY = math.huge, math.huge, -math.huge, -math.huge
-				local any = false
-				local hx, hy, hz = size.X / 2, size.Y / 2, size.Z / 2
+			if e.humanoid.Health > 0 and dist <= MAX_DIST then
+				local top = cam:WorldToViewportPoint(pos + TOP_OFFSET)
+				local bottom = cam:WorldToViewportPoint(pos - BOTTOM_OFFSET)
 
-				for _, sx in ipairs({ -1, 1 }) do
-					for _, sy in ipairs({ -1, 1 }) do
-						for _, sz in ipairs({ -1, 1 }) do
-							local v = cam:WorldToViewportPoint((cf * CFrame.new(sx * hx, sy * hy, sz * hz)).Position)
-							if v.Z > 0 then
-								any = true
-								minX = math.min(minX, v.X)
-								minY = math.min(minY, v.Y)
-								maxX = math.max(maxX, v.X)
-								maxY = math.max(maxY, v.Y)
-							end
+				if top.Z > 0 and bottom.Z > 0 then
+					show = true
+					local height = math.floor(math.abs(bottom.Y - top.Y))
+					local width = math.floor(height * 0.55)
+					local cx = (top.X + bottom.X) / 2
+
+					e.box.Position = UDim2.fromOffset(math.floor(cx - width / 2), math.floor(top.Y))
+					e.box.Size = UDim2.fromOffset(width, height)
+
+					if doText then
+						local d = math.floor(dist)
+						if d ~= e.lastDist then
+							e.lastDist = d
+							e.dist.Text = "[" .. d .. " studs]"
+						end
+
+						local hp = math.clamp(e.humanoid.Health / math.max(e.humanoid.MaxHealth, 1), 0, 1)
+						local q = math.floor(hp * 20)
+						if q ~= e.lastHp then
+							e.lastHp = q
+							e.hpFill.Size = UDim2.new(1, 0, hp, 0)
+							e.hpFill.BackgroundColor3 = HP_LOW:Lerp(HP_HIGH, hp)
 						end
 					end
 				end
+			end
 
-				if any then
-					e.box.Position = UDim2.fromOffset(minX, minY)
-					e.box.Size = UDim2.fromOffset(maxX - minX, maxY - minY)
-					e.box.Visible = true
-
-					local hp = math.clamp(e.humanoid.Health / math.max(e.humanoid.MaxHealth, 1), 0, 1)
-					e.hpFill.Size = UDim2.new(1, 0, hp, 0)
-					e.hpFill.BackgroundColor3 = Color3.fromRGB(220, 60, 60):Lerp(Color3.fromRGB(80, 220, 100), hp)
-
-					if myRoot then
-						e.dist.Text = "[" .. math.floor((myRoot.Position - cf.Position).Magnitude) .. " studs]"
-					else
-						e.dist.Text = ""
-					end
-				else
-					e.box.Visible = false
-				end
+			-- only touch Visible when it actually changes
+			if show ~= e.visible then
+				e.visible = show
+				e.box.Visible = show
 			end
 		end
 	end
 end
 
+local function trackPlayer(p, session)
+	if p == player then return end
+
+	local function onCharacter(char)
+		task.spawn(function()
+			local hum = char:WaitForChild("Humanoid", 10)
+			local root = char:WaitForChild("HumanoidRootPart", 10)
+			if session ~= espState.session or not espState.gui then return end
+			if not hum or not root or not char.Parent then return end
+			removeEntry(char)
+			espState.entities[char] = createEntry(p, hum, root)
+		end)
+	end
+
+	if p.Character then onCharacter(p.Character) end
+	table.insert(espState.conns, p.CharacterAdded:Connect(onCharacter))
+	table.insert(espState.conns, p.CharacterRemoving:Connect(removeEntry))
+end
+
 local function esp(state)
 	if state then
 		if espState.gui then return end
+
+		espState.session += 1
+		local session = espState.session
 
 		local gui = Instance.new("ScreenGui")
 		gui.Name = "fatality_esp"
@@ -220,24 +251,17 @@ local function esp(state)
 		gui.Parent = player:WaitForChild("PlayerGui")
 		espState.gui = gui
 
-		-- every Humanoid already in the world (players + NPCs)
-		for _, inst in ipairs(workspace:GetDescendants()) do
-			if inst:IsA("Humanoid") and inst.Parent then
-				trackModel(inst.Parent)
-			end
+		-- track players directly (no workspace-wide scanning)
+		for _, p in ipairs(Players:GetPlayers()) do
+			trackPlayer(p, session)
 		end
-
-		-- anything that spawns later
-		table.insert(espState.conns, workspace.DescendantAdded:Connect(function(inst)
-			if inst:IsA("Humanoid") then
-				task.defer(function()
-					if inst.Parent then trackModel(inst.Parent) end
-				end)
-			end
+		table.insert(espState.conns, Players.PlayerAdded:Connect(function(p)
+			trackPlayer(p, session)
 		end))
 
 		table.insert(espState.conns, RunService.RenderStepped:Connect(updateESP))
 	else
+		espState.session += 1
 		for _, conn in ipairs(espState.conns) do
 			conn:Disconnect()
 		end
@@ -267,7 +291,7 @@ local function build()
 
 	local PANEL_W, PANEL_H, HEADER_H, RAIL_W = 430, 270, 36, 104
 	local BODY_H = PANEL_H - HEADER_H
-	local TABS = { "Legit", "Rage", "Visuals", "Misc" }
+	local TABS = { "Legit", "Rage", "Visuals", "Misc", "Credits" }
 
 	local config = {}
 	local expanded = true
@@ -500,6 +524,19 @@ local function build()
 	addToggle(pages["Visuals"], "Chams", false, function(enabled)
 		toggleChams(enabled)
 	end)
+
+	-- ===== CREDITS TAB =====
+	local creditsLabel = Instance.new("TextLabel")
+	creditsLabel.Size = UDim2.new(1, 0, 0, 40)
+	creditsLabel.BackgroundColor3 = BG2
+	creditsLabel.BorderSizePixel = 0
+	creditsLabel.Text = "created by niverbeer/AKA/Nicolae"
+	creditsLabel.TextColor3 = TEXT
+	creditsLabel.Font = Enum.Font.GothamMedium
+	creditsLabel.TextSize = 13
+	creditsLabel.TextWrapped = true
+	creditsLabel.Parent = pages["Credits"]
+	round(creditsLabel, 5)
 
 	-- ===== DRAGGING (mouse + touch) =====
 	local dragging, dragInput, dragStart, startPos
