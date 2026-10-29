@@ -1038,6 +1038,62 @@ local function build()
     end)
 
     refreshAimKey()
+ ------------------------------------------------------------
+    -- RAGE TAB: ANTI-AIM SETTINGS
+    ------------------------------------------------------------
+
+    local AntiAim = {
+        Enabled = false,
+        SpinSpeed = 180,
+        YawDirection = 1,
+        Pitch = 0,
+    }
+
+    addToggle(
+        pages["Rage"],
+        "Anti-Aim",
+        false,
+        function(enabled)
+            AntiAim.Enabled = enabled
+        end
+    )
+
+    addAdjuster(
+        pages["Rage"],
+        "Spin Speed",
+        function()
+            return AntiAim.SpinSpeed
+        end,
+        function(value)
+            AntiAim.SpinSpeed = value
+        end,
+        30,
+        720,
+        30
+    )
+
+    addToggle(
+        pages["Rage"],
+        "Reverse Yaw",
+        false,
+        function(enabled)
+            AntiAim.YawDirection = enabled and -1 or 1
+        end
+    )
+
+    addAdjuster(
+        pages["Rage"],
+        "Pitch Offset",
+        function()
+            return AntiAim.Pitch
+        end,
+        function(value)
+            AntiAim.Pitch = value
+        end,
+        -90,
+        90,
+        15
+    )
 
     ------------------------------------------------------------
     -- VISUALS TAB
