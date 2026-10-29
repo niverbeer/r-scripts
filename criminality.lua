@@ -1042,58 +1042,124 @@ local function build()
     -- RAGE TAB: ANTI-AIM SETTINGS
     ------------------------------------------------------------
 
-    local AntiAim = {
-        Enabled = false,
-        SpinSpeed = 180,
-        YawDirection = 1,
-        Pitch = 0,
-    }
+   local AntiAim = {
+    Enabled = false,
+    SpinSpeed = 180,
+    YawDirection = 1,
+    Pitch = 0,
+}
 
-    addToggle(
-        pages["Rage"],
-        "Anti-Aim",
-        false,
-        function(enabled)
-            AntiAim.Enabled = enabled
+local spinConnection
+local spinHumanoid
+local originalAutoRotate
+
+local function stopSpin()
+    if spinConnection then
+        spinConnection:Disconnect()
+        spinConnection = nil
+    end
+
+    if spinHumanoid and spinHumanoid.Parent then
+        spinHumanoid.AutoRotate = originalAutoRotate
+    end
+
+    spinHumanoid = nil
+    originalAutoRotate = nil
+end
+
+local function startSpin()
+    stopSpin()
+
+    local character = player.Character
+    if not character then return end
+
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local root = character:FindFirstChild("HumanoidRootPart")
+
+    if not humanoid or not root then return end
+
+    spinHumanoid = humanoid
+    originalAutoRotate = humanoid.AutoRotate
+    humanoid.AutoRotate = false
+
+    local angle = math.rad(root.Orientation.Y)
+
+    spinConnection = RunService.RenderStepped:Connect(function(dt)
+        if not AntiAim.Enabled
+            or not character.Parent
+            or not root.Parent then
+            stopSpin()
+            return
         end
-    )
 
-    addAdjuster(
-        pages["Rage"],
-        "Spin Speed",
-        function()
-            return AntiAim.SpinSpeed
-        end,
-        function(value)
-            AntiAim.SpinSpeed = value
-        end,
-        30,
-        720,
-        30
-    )
+        angle += math.rad(AntiAim.SpinSpeed)
+            * AntiAim.YawDirection * dt
 
-    addToggle(
-        pages["Rage"],
-        "Reverse Yaw",
-        false,
-        function(enabled)
-            AntiAim.YawDirection = enabled and -1 or 1
-        end
-    )
+        root.CFrame =
+            CFrame.new(root.Position)
+            * CFrame.Angles(0, angle, 0)
+    end)
+end
 
-    addAdjuster(
-        pages["Rage"],
-        "Pitch Offset",
-        function()
-            return AntiAim.Pitch
-        end,
-        function(value)
-            AntiAim.Pitch = value
-        end,
-        -90,
-        90,
-        15
-    )
+local function updateSpin()
+    if AntiAim.Enabled then
+        startSpin()
+    else
+        stopSpin()
+    end
+end
+
+addToggle(
+    pages["Rage"],
+    "Anti-Aim",
+    false,
+    function(enabled)
+        AntiAim.Enabled = enabled
+        updateSpin()
+    end
+)
+
+addAdjuster(
+    pages["Rage"],
+    "Spin Speed",
+    function()
+        return AntiAim.SpinSpeed
+    end,
+    function(value)
+        AntiAim.SpinSpeed = value
+    end,
+    30, 720, 30
+)
+
+addToggle(
+    pages["Rage"],
+    "Reverse Yaw",
+    false,
+    function(enabled)
+        AntiAim.YawDirection = enabled and -1 or 1
+    end
+)
+
+addAdjuster(
+    pages["Rage"],
+    "Pitch Offset",
+    function()
+        return AntiAim.Pitch
+    end,
+    function(value)
+        AntiAim.Pitch = value
+    end,
+    -90, 90, 15
+)
+
+-- Restart spinning after respawn
+player.CharacterAdded:Connect(function()
+    task.wait(0.5)
+
+    if AntiAim.Enabled then
+        startSpin()
+    end
+end)
 
     ------------------------------------------------------------
     -- VISUALS TAB
