@@ -521,11 +521,12 @@ RunService.RenderStepped:Connect(function(dt)
     local target = getAimTarget()
 
     if camera and target then
-        local desired = CFrame.lookAt(
-            camera.CFrame.Position,
-            target.Position
-        )
+       local aimPosition = target.Position + Vector3.new(0, 0.15, 0)
 
+local desired = CFrame.lookAt(
+    camera.CFrame.Position,
+    aimPosition
+)
         local alpha = 1 - math.exp(
             -AimTest.Smoothness * dt
         )
@@ -978,7 +979,7 @@ local function build()
             AimTest.Smoothness = value
         end,
         1,
-        20,
+        40,
         1
     )
 
