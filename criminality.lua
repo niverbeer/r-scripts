@@ -1,5 +1,5 @@
 --!nocheck
--- fatality v2
+-- fatality v3
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -34,7 +34,7 @@ local function build()
     local config, accentRefs = {}, {}
     local accentIndex = 1
 
-    for _, n in ipairs({ "fatality", "fatality_wm" }) do
+    for _, n in ipairs({ "fatality", "fatality_wm", "fatality_test" }) do
         local old = playerGui:FindFirstChild(n)
         if old then old:Destroy() end
     end
@@ -53,28 +53,26 @@ local function build()
         s.Parent = o
     end
 
-    local function vp()
+    local function screenBounds()
         local cam = workspace.CurrentCamera
-        local v = cam and cam.ViewportSize or Vector2.new(0, 0)
-        if v.X < 1 or v.Y < 1 then v = playerGui.AbsoluteSize end
-        if v.X < 1 or v.Y < 1 then v = Vector2.new(1280, 720) end
+        local v = cam and cam.ViewportSize
+        if not v or v.X < 1 or v.Y < 1 then
+            local ok, res = pcall(function() return GuiService:GetScreenResolution() end)
+            if ok and res and res.X > 1 and res.Y > 1 then v = res end
+        end
         return v
-    end
-
-    local function insetY()
-        local tl = GuiService:GetGuiInset()
-        return tl and tl.Y or 36
     end
 
     local gui = Instance.new("ScreenGui")
     gui.Name = "fatality"
     gui.ResetOnSpawn = false
-    gui.IgnoreGuiInset = true
+    gui.IgnoreGuiInset = false
     gui.DisplayOrder = 999
     gui.Parent = playerGui
 
-    -- ===== PANEL =====
     local panel = Instance.new("Frame")
+    panel.AnchorPoint = Vector2.new(0, 0)
+    panel.Position = UDim2.fromScale(0.03, 0.12)
     panel.Size = UDim2.fromOffset(PANEL_W, PANEL_H)
     panel.BackgroundColor3 = BG
     panel.BorderSizePixel = 0
@@ -84,14 +82,17 @@ local function build()
     round(panel, 8)
     outline(panel)
 
-    local function place(x, y)
-        local v = vp()
-        local ins = insetY()
-        local h = expanded and PANEL_H or HEADER_H
-        panel.Position = UDim2.new(
-            0, math.clamp(x, 8, math.max(8, v.X - PANEL_W - 8)),
-            0, math.clamp(y, ins + 8, math.max(ins + 8, v.Y - h - 8))
-        )
+    local function clampInto(x, y)
+        local b = screenBounds()
+        if b then
+            x = math.clamp(x, 0, math.max(0, b.X - PANEL_W))
+            y = math.clamp(y, 0, math.max(0, b.Y - (expanded and PANEL_H or HEADER_H) - 44))
+        end
+        panel.Position = UDim2.fromOffset(x, y)
+    end
+
+    local function resetPos()
+        panel.Position = UDim2.fromScale(0.03, 0.12)
     end
 
     -- ===== HEADER =====
@@ -110,9 +111,25 @@ local function build()
     round(accentLine, 2)
     table.insert(accentRefs, function() accentLine.BackgroundColor3 = ACCENT end)
 
+    local grip = Instance.new("Frame")
+    grip.Size = UDim2.fromOffset(10, 12)
+    grip.Position = UDim2.fromOffset(12, 12)
+    grip.BackgroundTransparency = 1
+    grip.Parent = header
+    for r = 0, 2 do
+        for c = 0, 1 do
+            local dot = Instance.new("Frame")
+            dot.Size = UDim2.fromOffset(2, 2)
+            dot.Position = UDim2.fromOffset(c * 4, r * 5)
+            dot.BackgroundColor3 = DIM
+            dot.BorderSizePixel = 0
+            dot.Parent = grip
+        end
+    end
+
     local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -60, 1, 0)
-    title.Position = UDim2.fromOffset(14, 0)
+    title.Size = UDim2.new(1, -110, 1, 0)
+    title.Position = UDim2.fromOffset(28, 0)
     title.BackgroundTransparency = 1
     title.Text = "fatality"
     title.TextColor3 = TEXT
@@ -450,8 +467,7 @@ local function build()
     addSlider(pages[3], "Render Distance", 50, 2000, 500)
     addDivider(pages[3])
     addToggle(pages[3], "Fullbright", false, function(on)
-        local lighting = game:GetService("Lighting")
-        lighting.Brightness = on and 3 or 2
+        game:GetService("Lighting").Brightness = on and 3 or 2
     end)
 
     addLabel(pages[4], "Character", false)
@@ -558,7 +574,7 @@ local function build()
         end
     end)
 
-    -- ===== DRAG =====
+    -- ===== DRAG (absolute-position based, no viewport math) =====
     local moveConn, upConn
 
     local function isPress(i)
@@ -572,12 +588,15 @@ local function build()
         if upConn then upConn:Disconnect() end
 
         local origin = i.Position
-        local sx, sy = panel.Position.X.Offset, panel.Position.Y.Offset
+        local startAbs = panel.AbsolutePosition
 
         moveConn = UIS.InputChanged:Connect(function(m)
             if m.UserInputType == Enum.UserInputType.MouseMovement
                 or m.UserInputType == Enum.UserInputType.Touch then
-                place(sx + (m.Position.X - origin.X), sy + (m.Position.Y - origin.Y))
+                clampInto(
+                    startAbs.X + (m.Position.X - origin.X),
+                    startAbs.Y + (m.Position.Y - origin.Y)
+                )
             end
         end)
         upConn = UIS.InputEnded:Connect(function(m)
@@ -599,7 +618,6 @@ local function build()
         TweenService:Create(panel, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
             Size = UDim2.fromOffset(PANEL_W, expanded and PANEL_H or HEADER_H),
         }):Play()
-        place(panel.Position.X.Offset, panel.Position.Y.Offset)
     end
 
     minBtn.MouseButton1Click:Connect(function() setExpanded(not expanded) end)
@@ -610,22 +628,10 @@ local function build()
         if i.KeyCode == Enum.KeyCode.K then
             gui.Enabled = not gui.Enabled
         elseif i.KeyCode == Enum.KeyCode.RightShift then
-            place(60, 180)
+            resetPos()
         end
     end)
 
-    -- ===== START =====
-    place(60, 180)
-    task.spawn(function()
-        for _ = 1, 60 do
-            local v = vp()
-            if v.X > 1 and v.Y > 1 then
-                place(60, 180)
-                break
-            end
-            task.wait(0.1)
-        end
-    end)
     selectTab(1)
 end
 
