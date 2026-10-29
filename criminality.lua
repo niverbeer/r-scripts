@@ -1038,11 +1038,145 @@ local function build()
     end)
 
     refreshAimKey()
- ------------------------------------------------------------
-    -- RAGE TAB: ANTI-AIM SETTINGS
-    ------------------------------------------------------------
+------------------------------------------------------------
+-- RAGE TAB: SILENT AIM PREVIEW + ANTI-AIM
+------------------------------------------------------------
 
-   local AntiAim = {
+------------------------------------------------------------
+-- SILENT AIM SETTINGS
+------------------------------------------------------------
+
+local SilentAim = {
+    Enabled = false,
+    FOV = 150,
+    HitChance = 100,
+    TargetPart = "Head",
+    ShowFOV = true,
+}
+
+------------------------------------------------------------
+-- FOV CIRCLE DISPLAY
+------------------------------------------------------------
+
+local oldFOV = playerGui:FindFirstChild("SilentAimPreview")
+if oldFOV then
+    oldFOV:Destroy()
+end
+
+local fovGui = Instance.new("ScreenGui")
+fovGui.Name = "SilentAimPreview"
+fovGui.ResetOnSpawn = false
+fovGui.IgnoreGuiInset = true
+fovGui.DisplayOrder = 20
+fovGui.Parent = playerGui
+
+local circle = Instance.new("Frame")
+circle.Name = "FOVCircle"
+circle.AnchorPoint = Vector2.new(0.5, 0.5)
+circle.BackgroundTransparency = 1
+circle.BorderSizePixel = 0
+circle.Parent = fovGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(1, 0)
+corner.Parent = circle
+
+local stroke = Instance.new("UIStroke")
+stroke.Thickness = 1.5
+stroke.Color = Color3.fromRGB(255, 255, 255)
+stroke.Transparency = 0.15
+stroke.Parent = circle
+
+local function updateFOVCircle()
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+
+    local viewport = camera.ViewportSize
+
+    circle.Position = UDim2.fromOffset(
+        viewport.X / 2,
+        viewport.Y / 2
+    )
+
+    circle.Size = UDim2.fromOffset(
+        SilentAim.FOV * 2,
+        SilentAim.FOV * 2
+    )
+
+    circle.Visible =
+        SilentAim.Enabled and SilentAim.ShowFOV
+end
+
+local fovConnection =
+    RunService.RenderStepped:Connect(updateFOVCircle)
+
+updateFOVCircle()
+
+------------------------------------------------------------
+-- SILENT AIM GUI CONTROLS
+------------------------------------------------------------
+
+addToggle(
+    pages["Rage"],
+    "Silent Aim Preview",
+    false,
+    function(enabled)
+        SilentAim.Enabled = enabled
+        updateFOVCircle()
+    end
+)
+
+addAdjuster(
+    pages["Rage"],
+    "FOV Radius",
+    function()
+        return SilentAim.FOV
+    end,
+    function(value)
+        SilentAim.FOV = value
+        updateFOVCircle()
+    end,
+    50, 500, 25
+)
+
+addAdjuster(
+    pages["Rage"],
+    "Hit Chance",
+    function()
+        return SilentAim.HitChance
+    end,
+    function(value)
+        SilentAim.HitChance = value
+    end,
+    0, 100, 10
+)
+
+addToggle(
+    pages["Rage"],
+    "Show FOV Circle",
+    true,
+    function(enabled)
+        SilentAim.ShowFOV = enabled
+        updateFOVCircle()
+    end
+)
+
+addToggle(
+    pages["Rage"],
+    "Target Chest",
+    false,
+    function(enabled)
+        SilentAim.TargetPart = enabled
+            and "UpperTorso"
+            or "Head"
+    end
+)
+
+------------------------------------------------------------
+-- ANTI-AIM SETTINGS
+------------------------------------------------------------
+
+local AntiAim = {
     Enabled = false,
     SpinSpeed = 180,
     YawDirection = 1,
@@ -1073,8 +1207,11 @@ local function startSpin()
     local character = player.Character
     if not character then return end
 
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    local root = character:FindFirstChild("HumanoidRootPart")
+    local humanoid =
+        character:FindFirstChildOfClass("Humanoid")
+
+    local root =
+        character:FindFirstChild("HumanoidRootPart")
 
     if not humanoid or not root then return end
 
@@ -1152,7 +1289,10 @@ addAdjuster(
     -90, 90, 15
 )
 
--- Restart spinning after respawn
+------------------------------------------------------------
+-- RESPAWN HANDLER
+------------------------------------------------------------
+
 player.CharacterAdded:Connect(function()
     task.wait(0.5)
 
@@ -1160,7 +1300,6 @@ player.CharacterAdded:Connect(function()
         startSpin()
     end
 end)
- 
     ------------------------------------------------------------
     -- VISUALS TAB
     ------------------------------------------------------------
