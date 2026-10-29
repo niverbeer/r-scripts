@@ -1,17 +1,18 @@
 --!nocheck
--- fatality v3 + ESP (fixed)
+-- fatality v3 + Chams + Box ESP
 -- Put this in a LocalScript: StarterPlayer > StarterPlayerScripts
 
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 
 ----------------------------------------------------------------
--- ESP
+-- CHAMS (Highlight on other players)
 ----------------------------------------------------------------
-local env = {ESP_Active = false}
-local connections = {}
+local chamsActive = false
+local chamsConns = {}
 
 local function removeHighlight(p)
 	if p.Character then
@@ -21,9 +22,9 @@ local function removeHighlight(p)
 end
 
 local function setupHighlight(character)
-	if not env.ESP_Active then return end
+	if not chamsActive then return end
 	character:WaitForChild("HumanoidRootPart", 10)
-	if not env.ESP_Active then return end
+	if not chamsActive then return end
 
 	if not character:FindFirstChild("ESP_Highlight") then
 		local highlight = Instance.new("Highlight")
@@ -37,28 +38,214 @@ local function setupHighlight(character)
 	end
 end
 
-local function toggleESP(state)
-	env.ESP_Active = state
+local function toggleChams(state)
+	chamsActive = state
 
 	if state then
-		local function applyESP(p)
+		local function applyChams(p)
 			if p == player then return end
 			if p.Character then task.spawn(setupHighlight, p.Character) end
-			table.insert(connections, p.CharacterAdded:Connect(setupHighlight))
+			table.insert(chamsConns, p.CharacterAdded:Connect(setupHighlight))
 		end
 
 		for _, p in ipairs(Players:GetPlayers()) do
-			applyESP(p)
+			applyChams(p)
 		end
-		table.insert(connections, Players.PlayerAdded:Connect(applyESP))
+		table.insert(chamsConns, Players.PlayerAdded:Connect(applyChams))
 	else
-		for _, conn in ipairs(connections) do
+		for _, conn in ipairs(chamsConns) do
 			conn:Disconnect()
 		end
-		connections = {}
+		chamsConns = {}
 
 		for _, p in ipairs(Players:GetPlayers()) do
 			removeHighlight(p)
+		end
+	end
+end
+
+----------------------------------------------------------------
+-- ESP (2D boxes for every Humanoid: players + NPCs)
+----------------------------------------------------------------
+local PLAYER_COL = Color3.fromRGB(200, 55, 55)
+local NPC_COL = Color3.fromRGB(255, 170, 50)
+
+local espState = {
+	gui = nil,
+	entities = {}, -- [model] = { humanoid, box, name, dist, hpFill, isPlayer }
+	conns = {},
+}
+
+local function removeEntry(model)
+	local e = espState.entities[model]
+	if e then
+		e.box:Destroy()
+		espState.entities[model] = nil
+	end
+end
+
+local function createEntry(model, humanoid)
+	local plr = Players:GetPlayerFromCharacter(model)
+	local col = plr and PLAYER_COL or NPC_COL
+
+	local box = Instance.new("Frame")
+	box.BackgroundTransparency = 1
+	box.BorderSizePixel = 0
+	box.Visible = false
+	box.Parent = espState.gui
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = col
+	stroke.Thickness = 1.5
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	stroke.Parent = box
+
+	local nameLbl = Instance.new("TextLabel")
+	nameLbl.Size = UDim2.new(1, 60, 0, 14)
+	nameLbl.Position = UDim2.new(0, -30, 0, -16)
+	nameLbl.BackgroundTransparency = 1
+	nameLbl.Text = plr and plr.Name or model.Name
+	nameLbl.TextColor3 = col
+	nameLbl.TextStrokeTransparency = 0
+	nameLbl.Font = Enum.Font.GothamBold
+	nameLbl.TextSize = 12
+	nameLbl.Parent = box
+
+	local distLbl = Instance.new("TextLabel")
+	distLbl.Size = UDim2.new(1, 60, 0, 12)
+	distLbl.Position = UDim2.new(0, -30, 1, 2)
+	distLbl.BackgroundTransparency = 1
+	distLbl.Text = ""
+	distLbl.TextColor3 = Color3.fromRGB(235, 235, 240)
+	distLbl.TextStrokeTransparency = 0
+	distLbl.Font = Enum.Font.GothamMedium
+	distLbl.TextSize = 11
+	distLbl.Parent = box
+
+	local hpBg = Instance.new("Frame")
+	hpBg.Size = UDim2.new(0, 3, 1, 0)
+	hpBg.Position = UDim2.new(0, -6, 0, 0)
+	hpBg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	hpBg.BorderSizePixel = 0
+	hpBg.Parent = box
+
+	local hpFill = Instance.new("Frame")
+	hpFill.AnchorPoint = Vector2.new(0, 1)
+	hpFill.Position = UDim2.new(0, 0, 1, 0)
+	hpFill.Size = UDim2.new(1, 0, 1, 0)
+	hpFill.BackgroundColor3 = Color3.fromRGB(80, 220, 100)
+	hpFill.BorderSizePixel = 0
+	hpFill.Parent = hpBg
+
+	return { humanoid = humanoid, box = box, name = nameLbl, dist = distLbl, hpFill = hpFill }
+end
+
+local function trackModel(model)
+	if espState.entities[model] then return end
+	if not model:IsA("Model") or model == player.Character then return end
+	local hum = model:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+	espState.entities[model] = createEntry(model, hum)
+end
+
+local function updateESP()
+	local cam = workspace.CurrentCamera
+	if not cam then return end
+
+	local myChar = player.Character
+	local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+
+	for model, e in pairs(espState.entities) do
+		if not model:IsDescendantOf(workspace) then
+			removeEntry(model)
+		elseif model == myChar or e.humanoid.Health <= 0 then
+			e.box.Visible = false
+		else
+			local cf, size = model:GetBoundingBox()
+			local center = cam:WorldToViewportPoint(cf.Position)
+
+			if center.Z <= 0 then
+				e.box.Visible = false
+			else
+				local minX, minY, maxX, maxY = math.huge, math.huge, -math.huge, -math.huge
+				local any = false
+				local hx, hy, hz = size.X / 2, size.Y / 2, size.Z / 2
+
+				for _, sx in ipairs({ -1, 1 }) do
+					for _, sy in ipairs({ -1, 1 }) do
+						for _, sz in ipairs({ -1, 1 }) do
+							local v = cam:WorldToViewportPoint((cf * CFrame.new(sx * hx, sy * hy, sz * hz)).Position)
+							if v.Z > 0 then
+								any = true
+								minX = math.min(minX, v.X)
+								minY = math.min(minY, v.Y)
+								maxX = math.max(maxX, v.X)
+								maxY = math.max(maxY, v.Y)
+							end
+						end
+					end
+				end
+
+				if any then
+					e.box.Position = UDim2.fromOffset(minX, minY)
+					e.box.Size = UDim2.fromOffset(maxX - minX, maxY - minY)
+					e.box.Visible = true
+
+					local hp = math.clamp(e.humanoid.Health / math.max(e.humanoid.MaxHealth, 1), 0, 1)
+					e.hpFill.Size = UDim2.new(1, 0, hp, 0)
+					e.hpFill.BackgroundColor3 = Color3.fromRGB(220, 60, 60):Lerp(Color3.fromRGB(80, 220, 100), hp)
+
+					if myRoot then
+						e.dist.Text = "[" .. math.floor((myRoot.Position - cf.Position).Magnitude) .. " studs]"
+					else
+						e.dist.Text = ""
+					end
+				else
+					e.box.Visible = false
+				end
+			end
+		end
+	end
+end
+
+local function esp(state)
+	if state then
+		if espState.gui then return end
+
+		local gui = Instance.new("ScreenGui")
+		gui.Name = "fatality_esp"
+		gui.ResetOnSpawn = false
+		gui.IgnoreGuiInset = true -- matches WorldToViewportPoint coordinates
+		gui.DisplayOrder = 998
+		gui.Parent = player:WaitForChild("PlayerGui")
+		espState.gui = gui
+
+		-- every Humanoid already in the world (players + NPCs)
+		for _, inst in ipairs(workspace:GetDescendants()) do
+			if inst:IsA("Humanoid") and inst.Parent then
+				trackModel(inst.Parent)
+			end
+		end
+
+		-- anything that spawns later
+		table.insert(espState.conns, workspace.DescendantAdded:Connect(function(inst)
+			if inst:IsA("Humanoid") then
+				task.defer(function()
+					if inst.Parent then trackModel(inst.Parent) end
+				end)
+			end
+		end))
+
+		table.insert(espState.conns, RunService.RenderStepped:Connect(updateESP))
+	else
+		for _, conn in ipairs(espState.conns) do
+			conn:Disconnect()
+		end
+		espState.conns = {}
+		espState.entities = {}
+		if espState.gui then
+			espState.gui:Destroy()
+			espState.gui = nil
 		end
 	end
 end
@@ -306,8 +493,12 @@ local function build()
 	end
 
 	-- ===== VISUALS TAB =====
-	addToggle(pages["Visuals"], "Player ESP", false, function(enabled)
-		toggleESP(enabled)
+	addToggle(pages["Visuals"], "ESP (Boxes)", false, function(enabled)
+		esp(enabled)
+	end)
+
+	addToggle(pages["Visuals"], "Chams", false, function(enabled)
+		toggleChams(enabled)
 	end)
 
 	-- ===== DRAGGING (mouse + touch) =====
