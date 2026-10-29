@@ -275,6 +275,110 @@ local function esp(state)
 end
 
 ----------------------------------------------------------------
+----------------------------------------------------------------
+-- DEVELOPER AIM TEST (Roblox Studio only)
+-- Targets NPC models tagged "AimTestTarget".
+----------------------------------------------------------------
+local CollectionService = game:GetService("CollectionService")
+local AimTest = {
+    Enabled = false,
+    FOV = 120,          -- radius in screen pixels
+    Smoothness = 8,     -- higher = faster camera tracking
+}
+
+local aimGui = Instance.new("ScreenGui")
+aimGui.Name = "AimTestFOV"
+aimGui.ResetOnSpawn = false
+aimGui.IgnoreGuiInset = true
+aimGui.Parent = player:WaitForChild("PlayerGui")
+
+local circle = Instance.new("Frame")
+circle.Name = "FOVCircle"
+circle.AnchorPoint = Vector2.new(0.5, 0.5)
+circle.Position = UDim2.fromScale(0.5, 0.5)
+circle.Size = UDim2.fromOffset(AimTest.FOV * 2, AimTest.FOV * 2)
+circle.BackgroundTransparency = 1
+circle.Visible = false
+circle.Parent = aimGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(1, 0)
+corner.Parent = circle
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(200, 55, 55)
+stroke.Thickness = 1.5
+stroke.Transparency = 0.1
+stroke.Parent = circle
+
+local aiming = false
+
+UIS.InputBegan:Connect(function(input, processed)
+    if not processed
+        and input.UserInputType == Enum.UserInputType.MouseButton2 then
+        aiming = true
+    end
+end)
+
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        aiming = false
+    end
+end)
+
+local function getAimTarget()
+    local camera = workspace.CurrentCamera
+    if not camera then return nil end
+
+    local center = camera.ViewportSize / 2
+    local bestTarget = nil
+    local bestDistance = AimTest.FOV
+
+    for _, model in ipairs(CollectionService:GetTagged("AimTestTarget")) do
+        if model:IsA("Model") and model ~= player.Character then
+            local humanoid = model:FindFirstChildOfClass("Humanoid")
+            local part = model:FindFirstChild("Head")
+                or model:FindFirstChild("HumanoidRootPart")
+
+            if humanoid and humanoid.Health > 0
+                and part and part:IsA("BasePart") then
+                local screenPos, onScreen = camera:WorldToViewportPoint(part.Position)
+
+                if onScreen and screenPos.Z > 0 then
+                    local point = Vector2.new(screenPos.X, screenPos.Y)
+                    local distance = (point - center).Magnitude
+
+                    if distance < bestDistance then
+                        bestDistance = distance
+                        bestTarget = part
+                    end
+                end
+            end
+        end
+    end
+
+    return bestTarget
+end
+
+RunService.RenderStepped:Connect(function(dt)
+    -- Keep this feature limited to Studio testing.
+    local inStudio = RunService:IsStudio()
+    circle.Visible = inStudio and AimTest.Enabled
+
+    if not inStudio or not AimTest.Enabled or not aiming then
+        return
+    end
+
+    local camera = workspace.CurrentCamera
+    local target = getAimTarget()
+
+    if camera and target then
+        local desired = CFrame.lookAt(camera.CFrame.Position, target.Position)
+        local alpha = 1 - math.exp(-AimTest.Smoothness * dt)
+        camera.CFrame = camera.CFrame:Lerp(desired, alpha)
+    end
+end)
+
 -- UI
 ----------------------------------------------------------------
 local function build()
@@ -515,6 +619,11 @@ local function build()
 		paint(false)
 		return row
 	end
+
+	-- ===== LEGIT TAB =====
+	addToggle(pages["Legit"], "Aim Assist (Studio)", false, function(enabled)
+		AimTest.Enabled = enabled
+	end)
 
 	-- ===== VISUALS TAB =====
 	addToggle(pages["Visuals"], "ESP (Boxes)", false, function(enabled)
