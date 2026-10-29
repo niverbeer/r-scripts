@@ -282,8 +282,10 @@ end
 local CollectionService = game:GetService("CollectionService")
 local AimTest = {
     Enabled = false,
-    FOV = 120,          -- radius in screen pixels
-    Smoothness = 8,     -- higher = faster camera tracking
+    FOV = 80,           -- smaller radius in screen pixels
+    Smoothness = 4,      -- lower = slower/smoother tracking
+    KeyCode = Enum.KeyCode.Q, -- hold this key to aim
+    WaitingForKey = false,
 }
 
 local aimGui = Instance.new("ScreenGui")
@@ -312,16 +314,32 @@ stroke.Transparency = 0.1
 stroke.Parent = circle
 
 local aiming = false
+local aimKeyChangedCallback = nil
+
+local function isAimKey(input)
+    return input.KeyCode == AimTest.KeyCode
+end
 
 UIS.InputBegan:Connect(function(input, processed)
-    if not processed
-        and input.UserInputType == Enum.UserInputType.MouseButton2 then
+    if AimTest.WaitingForKey then
+        if input.UserInputType == Enum.UserInputType.Keyboard
+            and input.KeyCode ~= Enum.KeyCode.Unknown then
+            AimTest.KeyCode = input.KeyCode
+            AimTest.WaitingForKey = false
+            if aimKeyChangedCallback then
+                aimKeyChangedCallback()
+            end
+        end
+        return
+    end
+
+    if not processed and isAimKey(input) then
         aiming = true
     end
 end)
 
 UIS.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+    if isAimKey(input) then
         aiming = false
     end
 end)
@@ -364,6 +382,7 @@ RunService.RenderStepped:Connect(function(dt)
     -- Keep this feature limited to Studio testing.
     local inStudio = RunService:IsStudio()
     circle.Visible = inStudio and AimTest.Enabled
+    circle.Size = UDim2.fromOffset(AimTest.FOV * 2, AimTest.FOV * 2)
 
     if not inStudio or not AimTest.Enabled or not aiming then
         return
@@ -624,6 +643,111 @@ local function build()
 	addToggle(pages["Legit"], "Aim Assist (Studio)", false, function(enabled)
 		AimTest.Enabled = enabled
 	end)
+
+	-- Small reusable setting row with minus / value / plus controls.
+	local function addAdjuster(page, label, getter, setter, minValue, maxValue, step)
+		local row = Instance.new("Frame")
+		row.Size = UDim2.new(1, 0, 0, 30)
+		row.BackgroundColor3 = BG2
+		row.BorderSizePixel = 0
+		row.Parent = page
+		round(row, 5)
+
+		local lbl = Instance.new("TextLabel")
+		lbl.Size = UDim2.new(1, -130, 1, 0)
+		lbl.Position = UDim2.fromOffset(9, 0)
+		lbl.BackgroundTransparency = 1
+		lbl.Text = label
+		lbl.TextColor3 = TEXT
+		lbl.TextXAlignment = Enum.TextXAlignment.Left
+		lbl.Font = Enum.Font.GothamMedium
+		lbl.TextSize = 12
+		lbl.Parent = row
+
+		local value = Instance.new("TextLabel")
+		value.Size = UDim2.fromOffset(42, 22)
+		value.Position = UDim2.new(1, -83, 0.5, -11)
+		value.BackgroundTransparency = 1
+		value.TextColor3 = TEXT
+		value.Font = Enum.Font.GothamBold
+		value.TextSize = 12
+		value.Parent = row
+
+		local minus = Instance.new("TextButton")
+		minus.Size = UDim2.fromOffset(22, 22)
+		minus.Position = UDim2.new(1, -108, 0.5, -11)
+		minus.BackgroundColor3 = OFF
+		minus.BorderSizePixel = 0
+		minus.Text = "-"
+		minus.TextColor3 = TEXT
+		minus.Font = Enum.Font.GothamBold
+		minus.TextSize = 14
+		minus.Parent = row
+		round(minus, 4)
+
+		local plus = Instance.new("TextButton")
+		plus.Size = UDim2.fromOffset(22, 22)
+		plus.Position = UDim2.new(1, -27, 0.5, -11)
+		plus.BackgroundColor3 = OFF
+		plus.BorderSizePixel = 0
+		plus.Text = "+"
+		plus.TextColor3 = TEXT
+		plus.Font = Enum.Font.GothamBold
+		plus.TextSize = 14
+		plus.Parent = row
+		round(plus, 4)
+
+		local function refresh()
+			value.Text = tostring(getter())
+		end
+
+		minus.MouseButton1Click:Connect(function()
+			setter(math.clamp(getter() - step, minValue, maxValue))
+			refresh()
+		end)
+		plus.MouseButton1Click:Connect(function()
+			setter(math.clamp(getter() + step, minValue, maxValue))
+			refresh()
+		end)
+
+		refresh()
+		return row
+	end
+
+	addAdjuster(pages["Legit"], "FOV Radius", function()
+		return AimTest.FOV
+	end, function(v)
+		AimTest.FOV = v
+	end, 20, 240, 10)
+
+	addAdjuster(pages["Legit"], "Smoothness", function()
+		return AimTest.Smoothness
+	end, function(v)
+		AimTest.Smoothness = v
+	end, 1, 20, 1)
+
+	local keyButton = Instance.new("TextButton")
+	keyButton.Size = UDim2.new(1, 0, 0, 30)
+	keyButton.BackgroundColor3 = BG2
+	keyButton.BorderSizePixel = 0
+	keyButton.TextColor3 = TEXT
+	keyButton.Font = Enum.Font.GothamMedium
+	keyButton.TextSize = 12
+	keyButton.Parent = pages["Legit"]
+	round(keyButton, 5)
+
+	local function refreshAimKey()
+		keyButton.Text = AimTest.WaitingForKey
+			and "Press a keyboard key..."
+			or ("Aim Key: " .. AimTest.KeyCode.Name .. " (click to change)")
+	end
+	aimKeyChangedCallback = refreshAimKey
+
+	keyButton.MouseButton1Click:Connect(function()
+		AimTest.WaitingForKey = true
+		refreshAimKey()
+	end)
+	refreshAimKey()
 
 	-- ===== VISUALS TAB =====
 	addToggle(pages["Visuals"], "ESP (Boxes)", false, function(enabled)
