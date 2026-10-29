@@ -1,11 +1,76 @@
 --!nocheck
--- fatality v3
+-- fatality v3 + ESP Integration
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local GuiService = game:GetService("GuiService")
 local player = Players.LocalPlayer
+
+-- Global ESP Control Variables
+local _G = getgenv and getgenv() or _G
+_G.ESP_Active = false
+local connections = {}
+
+-- Внутренняя функция для очистки конкретного игрока от ESP
+local function removeHighlight(p)
+    if p.Character then
+        local hl = p.Character:FindFirstChild("ESP_Highlight")
+        if hl then hl:Destroy() end
+    end
+end
+
+-- Внутренняя функция применения ESP к персонажу
+local function setupHighlight(character)
+    if not _G.ESP_Active then return end
+    character:WaitForChild("HumanoidRootPart", 10)
+    
+    if not character:FindFirstChild("ESP_Highlight") then
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "ESP_Highlight"
+        highlight.FillColor = Color3.fromRGB(200, 55, 55) -- Под цвет интерфейса (ACCENT)
+        highlight.FillOpacity = 0.5
+        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+        highlight.OutlineOpacity = 1
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.Parent = character
+    end
+end
+
+-- Логика управления ESP (Вкл / Выкл)
+local function toggleESP(state)
+    _G.ESP_Active = state
+    
+    if state then
+        -- Функция обработки игрока
+        local function applyESP(p)
+            if p == player then return end
+            if p.Character then task.spawn(setupHighlight, p.Character) end
+            local conn = p.CharacterAdded:Connect(setupHighlight)
+            table.insert(connections, conn)
+        end
+
+        -- Включаем для текущих игроков
+        for _, p in ipairs(Players:GetPlayers()) do
+            applyESP(p)
+        end
+
+        -- Слушаем новых игроков
+        local joinConn = Players.PlayerAdded:Connect(applyESP)
+        table.insert(connections, joinConn)
+    else
+        -- Отключаем все слушатели событий
+        for _, conn in ipairs(connections) do
+            if conn then conn:Disconnect() end
+        end
+        connections = {}
+
+        -- Удаляем визуальные эффекты со всех игроков в зоне видимости
+        for _, p in ipairs(Players:GetPlayers()) do
+            removeHighlight(p)
+        end
+    end
+end
 
 local function build()
     local playerGui = player:WaitForChild("PlayerGui")
@@ -23,16 +88,8 @@ local function build()
     local BODY_H = PANEL_H - HEADER_H
     local TABS = { "Legit", "Rage", "Visuals", "Misc" }
 
-    local PRESETS = {
-        Color3.fromRGB(200, 55, 55),
-        Color3.fromRGB(70, 130, 230),
-        Color3.fromRGB(80, 200, 120),
-        Color3.fromRGB(170, 90, 230),
-        Color3.fromRGB(240, 170, 50),
-    }
-
     local config, accentRefs = {}, {}
-    local accentIndex = 1
+    local expanded = true
 
     for _, n in ipairs({ "fatality", "fatality_wm", "fatality_test" }) do
         local old = playerGui:FindFirstChild(n)
@@ -71,9 +128,8 @@ local function build()
     gui.Parent = playerGui
 
     local panel = Instance.new("Frame")
-    panel.AnchorPoint = Vector2.new(0, 0)
-    panel.Position = UDim2.fromScale(0.03, 0.12)
     panel.Size = UDim2.fromOffset(PANEL_W, PANEL_H)
+    panel.Position = UDim2.fromScale(0.03, 0.12)
     panel.BackgroundColor3 = BG
     panel.BorderSizePixel = 0
     panel.ClipsDescendants = true
@@ -81,19 +137,6 @@ local function build()
     panel.Parent = gui
     round(panel, 8)
     outline(panel)
-
-    local function clampInto(x, y)
-        local b = screenBounds()
-        if b then
-            x = math.clamp(x, 0, math.max(0, b.X - PANEL_W))
-            y = math.clamp(y, 0, math.max(0, b.Y - (expanded and PANEL_H or HEADER_H) - 44))
-        end
-        panel.Position = UDim2.fromOffset(x, y)
-    end
-
-    local function resetPos()
-        panel.Position = UDim2.fromScale(0.03, 0.12)
-    end
 
     -- ===== HEADER =====
     local header = Instance.new("Frame")
@@ -106,26 +149,8 @@ local function build()
     accentLine.Size = UDim2.new(0, 3, 0, HEADER_H - 12)
     accentLine.Position = UDim2.new(0, 0, 0, 6)
     accentLine.BackgroundColor3 = ACCENT
-    accentLine.BorderSizePixel = 0
     accentLine.Parent = header
     round(accentLine, 2)
-    table.insert(accentRefs, function() accentLine.BackgroundColor3 = ACCENT end)
-
-    local grip = Instance.new("Frame")
-    grip.Size = UDim2.fromOffset(10, 12)
-    grip.Position = UDim2.fromOffset(12, 12)
-    grip.BackgroundTransparency = 1
-    grip.Parent = header
-    for r = 0, 2 do
-        for c = 0, 1 do
-            local dot = Instance.new("Frame")
-            dot.Size = UDim2.fromOffset(2, 2)
-            dot.Position = UDim2.fromOffset(c * 4, r * 5)
-            dot.BackgroundColor3 = DIM
-            dot.BorderSizePixel = 0
-            dot.Parent = grip
-        end
-    end
 
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, -110, 1, 0)
@@ -142,12 +167,10 @@ local function build()
     minBtn.Size = UDim2.fromOffset(26, 22)
     minBtn.Position = UDim2.new(1, -34, 0, 7)
     minBtn.BackgroundColor3 = BG2
-    minBtn.AutoButtonColor = false
     minBtn.Text = "-"
     minBtn.TextColor3 = TEXT
     minBtn.Font = Enum.Font.GothamBold
     minBtn.TextSize = 16
-    minBtn.ZIndex = 3
     minBtn.Parent = header
     round(minBtn, 4)
 
@@ -155,7 +178,6 @@ local function build()
     hr.Size = UDim2.new(1, 0, 0, 1)
     hr.Position = UDim2.new(0, 0, 0, HEADER_H)
     hr.BackgroundColor3 = LINE
-    hr.BorderSizePixel = 0
     hr.Parent = panel
 
     -- ===== BODY =====
@@ -168,16 +190,12 @@ local function build()
     local rail = Instance.new("Frame")
     rail.Size = UDim2.new(0, RAIL_W, 1, 0)
     rail.BackgroundColor3 = RAIL
-    rail.BorderSizePixel = 0
     rail.Parent = body
+    round(rail, 0)
 
     local railLayout = Instance.new("UIListLayout")
     railLayout.Padding = UDim.new(0, 1)
     railLayout.Parent = rail
-
-    local railPad = Instance.new("UIPadding")
-    railPad.PaddingTop = UDim.new(0, 8)
-    railPad.Parent = rail
 
     local content = Instance.new("Frame")
     content.Size = UDim2.new(1, -RAIL_W, 1, 0)
@@ -185,41 +203,61 @@ local function build()
     content.BackgroundTransparency = 1
     content.Parent = body
 
-    local contentPad = Instance.new("UIPadding")
-    contentPad.PaddingTop = UDim.new(0, 10)
-    contentPad.PaddingLeft = UDim.new(0, 10)
-    contentPad.PaddingRight = UDim.new(0, 10)
-    contentPad.PaddingBottom = UDim.new(0, 10)
-    contentPad.Parent = content
+    -- Контейнеры для каждой вкладки
+    local pages = {}
+    for _, tabName in ipairs(TABS) do
+        local page = Instance.new("ScrollingFrame")
+        page.Size = UDim2.new(1, 0, 1, 0)
+        page.BackgroundTransparency = 1
+        page.CanvasSize = UDim2.new(0, 0, 0, 0)
+        page.ScrollBarThickness = 2
+        page.Visible = (tabName == "Visuals") -- Делаем вкладку Visuals активной по умолчанию
+        page.Parent = content
+        
+        local layout = Instance.new("UIListLayout")
+        layout.Padding = UDim.new(0, 6)
+        layout.Parent = page
 
-    -- ===== CONTROLS =====
-    local function addLabel(page, text, dim)
-        local l = Instance.new("TextLabel")
-        l.Size = UDim2.new(1, 0, 0, dim and 15 or 18)
-        l.BackgroundTransparency = 1
-        l.Text = text
-        l.TextColor3 = dim and DIM or TEXT
-        l.TextXAlignment = Enum.TextXAlignment.Left
-        l.Font = dim and Enum.Font.Gotham or Enum.Font.GothamBold
-        l.TextSize = dim and 11 or 12
-        l.Parent = page
-        return l
+        local pad = Instance.new("UIPadding")
+        pad.PaddingTop = UDim.new(0, 10)
+        pad.PaddingLeft = UDim.new(0, 10)
+        pad.PaddingRight = UDim.new(0, 10)
+        pad.Parent = page
+
+        pages[tabName] = page
+
+        -- Создание кнопки вкладки в боковом меню (Rail)
+        local tabBtn = Instance.new("TextButton")
+        tabBtn.Size = UDim2.new(1, 0, 0, 32)
+        tabBtn.BackgroundColor3 = (tabName == "Visuals") and BG2 or Color3.fromRGB(0,0,0)
+        tabBtn.BackgroundTransparency = (tabName == "Visuals") and 0 or 1
+        tabBtn.Text = tabName
+        tabBtn.TextColor3 = (tabName == "Visuals") and TEXT or DIM
+        tabBtn.Font = Enum.Font.GothamMedium
+        tabBtn.TextSize = 12
+        tabBtn.Parent = rail
+
+        tabBtn.MouseButton1Click:Connect(function()
+            for name, p in pairs(pages) do p.Visible = (name == tabName) end
+            for _, b in ipairs(rail:GetChildren()) do
+                if b:IsA("TextButton") then
+                    b.BackgroundColor3 = Color3.fromRGB(0,0,0)
+                    b.BackgroundTransparency = 1
+                    b.TextColor3 = DIM
+                end
+            end
+            tabBtn.BackgroundColor3 = BG2
+            tabBtn.BackgroundTransparency = 0
+            tabBtn.TextColor3 = TEXT
+        end)
     end
 
-    local function addDivider(page)
-        local d = Instance.new("Frame")
-        d.Size = UDim2.new(1, 0, 0, 1)
-        d.BackgroundColor3 = LINE
-        d.BorderSizePixel = 0
-        d.Parent = page
-    end
-
+    -- ===== CONTROLS BUILDER =====
     local function addToggle(page, label, default, onChange)
         local state = default and true or false
         local row = Instance.new("Frame")
         row.Size = UDim2.new(1, 0, 0, 28)
         row.BackgroundColor3 = BG2
-        row.BorderSizePixel = 0
         row.Parent = page
         round(row, 5)
 
@@ -239,7 +277,6 @@ local function build()
         btn.Position = UDim2.new(1, -42, 0.5, -8)
         btn.BackgroundColor3 = state and ACCENT or OFF
         btn.Text = ""
-        btn.AutoButtonColor = false
         btn.Parent = row
         round(btn, 9)
 
@@ -250,389 +287,66 @@ local function build()
         knob.Parent = btn
         round(knob, 7)
 
-        local function paint()
-            config[label] = state
-            btn.BackgroundColor3 = state and ACCENT or OFF
-            TweenService:Create(knob, TweenInfo.new(0.1), {
-                Position = UDim2.new(0, state and 17 or 2, 0.5, -6),
-            }):Play()
-            if onChange then task.spawn(onChange, state) end
-        end
+        local function paint(animate)
+            local targetBg = state and ACCENT or OFF
+            local targetKnobPos = state and UDim2.new(0, 17, 0.5, -6) or UDim2.new(0, 2, 0.5, -6)
 
-        table.insert(accentRefs, function()
-            btn.BackgroundColor3 = state and ACCENT or OFF
-        end)
-
-        btn.MouseButton1Click:Connect(function()
-            state = not state
-            paint()
-        end)
-
-        config[label] = state
-        return {
-            Get = function() return state end,
-            Set = function(v) state = v and true or false; paint() end,
-        }
-    end
-
-    local function addSlider(page, label, min, max, default, onChange)
-        local value = math.clamp(default, min, max)
-        local row = Instance.new("Frame")
-        row.Size = UDim2.new(1, 0, 0, 42)
-        row.BackgroundColor3 = BG2
-        row.BorderSizePixel = 0
-        row.Parent = page
-        round(row, 5)
-
-        local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(1, -50, 0, 17)
-        lbl.Position = UDim2.fromOffset(10, 4)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = label
-        lbl.TextColor3 = TEXT
-        lbl.TextXAlignment = Enum.TextXAlignment.Left
-        lbl.Font = Enum.Font.GothamMedium
-        lbl.TextSize = 12
-        lbl.Parent = row
-
-        local val = Instance.new("TextLabel")
-        val.Size = UDim2.new(0, 40, 0, 17)
-        val.Position = UDim2.new(1, -50, 0, 4)
-        val.BackgroundTransparency = 1
-        val.Text = tostring(value)
-        val.TextColor3 = DIM
-        val.TextXAlignment = Enum.TextXAlignment.Right
-        val.Font = Enum.Font.GothamMedium
-        val.TextSize = 11
-        val.Parent = row
-
-        local bar = Instance.new("TextButton")
-        bar.Size = UDim2.new(1, -20, 0, 5)
-        bar.Position = UDim2.fromOffset(10, 28)
-        bar.BackgroundColor3 = OFF
-        bar.Text = ""
-        bar.AutoButtonColor = false
-        bar.Parent = row
-        round(bar, 3)
-
-        local fill = Instance.new("Frame")
-        fill.Size = UDim2.new((value - min) / (max - min), 0, 1, 0)
-        fill.BackgroundColor3 = ACCENT
-        fill.BorderSizePixel = 0
-        fill.Parent = bar
-        round(fill, 3)
-
-        table.insert(accentRefs, function() fill.BackgroundColor3 = ACCENT end)
-
-        local function apply(a)
-            value = math.floor(min + (max - min) * a + 0.5)
-            fill.Size = UDim2.new(a, 0, 1, 0)
-            val.Text = tostring(value)
-            config[label] = value
-            if onChange then task.spawn(onChange, value) end
-        end
-
-        local moveConn, upConn
-        bar.InputBegan:Connect(function(i)
-            if i.UserInputType ~= Enum.UserInputType.MouseButton1
-                and i.UserInputType ~= Enum.UserInputType.Touch then return end
-            if moveConn then moveConn:Disconnect() end
-            if upConn then upConn:Disconnect() end
-
-            local function set(p)
-                apply(math.clamp((p.X - bar.AbsolutePosition.X) / math.max(1, bar.AbsoluteSize.X), 0, 1))
-            end
-            set(i.Position)
-
-            moveConn = UIS.InputChanged:Connect(function(m)
-                if m.UserInputType == Enum.UserInputType.MouseMovement
-                    or m.UserInputType == Enum.UserInputType.Touch then set(m.Position) end
-            end)
-            upConn = UIS.InputEnded:Connect(function(m)
-                if m.UserInputType ~= Enum.UserInputType.MouseButton1
-                    and m.UserInputType ~= Enum.UserInputType.Touch then return end
-                if moveConn then moveConn:Disconnect() end
-                if upConn then upConn:Disconnect() end
-                moveConn, upConn = nil, nil
-            end)
-        end)
-
-        config[label] = value
-        return {
-            Get = function() return value end,
-            Set = function(v) apply(math.clamp((v - min) / (max - min), 0, 1)) end,
-        }
-    end
-
-    local function addButton(page, label, onClick)
-        local b = Instance.new("TextButton")
-        b.Size = UDim2.new(1, 0, 0, 26)
-        b.BackgroundColor3 = BG2
-        b.AutoButtonColor = false
-        b.Text = label
-        b.TextColor3 = TEXT
-        b.Font = Enum.Font.GothamMedium
-        b.TextSize = 12
-        b.Parent = page
-        round(b, 5)
-        b.MouseEnter:Connect(function() b.BackgroundColor3 = OFF end)
-        b.MouseLeave:Connect(function() b.BackgroundColor3 = BG2 end)
-        b.MouseButton1Click:Connect(function() if onClick then task.spawn(onClick) end end)
-        return b
-    end
-
-    -- ===== TABS =====
-    local tabBtns, pages = {}, {}
-    local current = 1
-
-    local function selectTab(i)
-        current = i
-        for idx, b in ipairs(tabBtns) do
-            b.TextColor3 = idx == i and TEXT or DIM
-            b.BackgroundColor3 = idx == i and BG2 or RAIL
-            pages[idx].Visible = idx == i
-        end
-    end
-
-    for i, name in ipairs(TABS) do
-        local b = Instance.new("TextButton")
-        b.Size = UDim2.new(1, 0, 0, 30)
-        b.BackgroundColor3 = RAIL
-        b.AutoButtonColor = false
-        b.Text = name
-        b.TextColor3 = DIM
-        b.TextXAlignment = Enum.TextXAlignment.Left
-        b.Font = Enum.Font.GothamMedium
-        b.TextSize = 12
-        b.Parent = rail
-
-        local pad = Instance.new("UIPadding")
-        pad.PaddingLeft = UDim.new(0, 14)
-        pad.Parent = b
-
-        b.MouseButton1Click:Connect(function() selectTab(i) end)
-        tabBtns[i] = b
-
-        local page = Instance.new("ScrollingFrame")
-        page.Size = UDim2.new(1, 0, 1, 0)
-        page.BackgroundTransparency = 1
-        page.BorderSizePixel = 0
-        page.ScrollBarThickness = 3
-        page.ScrollBarImageColor3 = LINE
-        page.ScrollingDirection = Enum.ScrollingDirection.Y
-        page.ElasticBehavior = Enum.ElasticBehavior.Never
-        page.CanvasSize = UDim2.new(0, 0, 0, 0)
-        page.AutomaticCanvasSize = Enum.AutomaticSize.Y
-        page.Visible = false
-        page.Parent = content
-
-        local pl = Instance.new("UIListLayout")
-        pl.Padding = UDim.new(0, 5)
-        pl.Parent = page
-
-        pages[i] = page
-    end
-
-    -- ===== CONTENT =====
-    local function hum()
-        local c = player.Character
-        return c and c:FindFirstChildWhichIsA("Humanoid")
-    end
-
-    local jumpConn
-
-    addLabel(pages[1], "Combat", false)
-    addToggle(pages[1], "Aim Assist", false)
-    addSlider(pages[1], "FOV", 20, 400, 120)
-    addSlider(pages[1], "Smoothing", 1, 20, 6)
-    addToggle(pages[1], "Silent Aim", false)
-    addDivider(pages[1])
-    addLabel(pages[1], "Trigger", false)
-    addToggle(pages[1], "Trigger Bot", false)
-    addSlider(pages[1], "Trigger Delay", 0, 300, 60)
-
-    addLabel(pages[2], "Aimbot", false)
-    addToggle(pages[2], "Enabled", false)
-    addToggle(pages[2], "Visible Check", true)
-    addSlider(pages[2], "Hitbox Scale", 1, 10, 2)
-    addDivider(pages[2])
-    addLabel(pages[2], "Target", false)
-    addButton(pages[2], "Closest to Crosshair")
-    addButton(pages[2], "Closest to Player")
-
-    addLabel(pages[3], "ESP", false)
-    addToggle(pages[3], "Boxes", false)
-    addToggle(pages[3], "Names", false)
-    addToggle(pages[3], "Health Bars", false)
-    addSlider(pages[3], "Render Distance", 50, 2000, 500)
-    addDivider(pages[3])
-    addToggle(pages[3], "Fullbright", false, function(on)
-        game:GetService("Lighting").Brightness = on and 3 or 2
-    end)
-
-    addLabel(pages[4], "Character", false)
-    addSlider(pages[4], "WalkSpeed", 16, 300, 16, function(v)
-        local h = hum()
-        if h then h.WalkSpeed = v end
-    end)
-    addSlider(pages[4], "JumpPower", 50, 500, 50, function(v)
-        local h = hum()
-        if h then h.JumpPower = v end
-    end)
-    addToggle(pages[4], "Infinite Jump", false, function(on)
-        if jumpConn then jumpConn:Disconnect() jumpConn = nil end
-        if on then
-            jumpConn = UIS.JumpRequest:Connect(function()
-                local h = hum()
-                if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end
-            end)
-        end
-    end)
-    addDivider(pages[4])
-    addLabel(pages[4], "Accent", false)
-
-    local swRow = Instance.new("Frame")
-    swRow.Size = UDim2.new(1, 0, 0, 24)
-    swRow.BackgroundTransparency = 1
-    swRow.Parent = pages[4]
-    local swL = Instance.new("UIListLayout")
-    swL.FillDirection = Enum.FillDirection.Horizontal
-    swL.Padding = UDim.new(0, 6)
-    swL.Parent = swRow
-
-    local function applyAccent(c)
-        ACCENT = c
-        for _, f in ipairs(accentRefs) do pcall(f) end
-    end
-
-    for i, c in ipairs(PRESETS) do
-        local sw = Instance.new("TextButton")
-        sw.Size = UDim2.fromOffset(24, 24)
-        sw.BackgroundColor3 = c
-        sw.Text = ""
-        sw.AutoButtonColor = false
-        sw.Parent = swRow
-        round(sw, 12)
-        sw.MouseButton1Click:Connect(function()
-            accentIndex = i
-            applyAccent(c)
-        end)
-    end
-
-    addButton(pages[4], "Unload", function() gui:Destroy() end)
-
-    -- ===== WATERMARK =====
-    local wm = Instance.new("Frame")
-    wm.Name = "fatality_wm"
-    wm.Size = UDim2.fromOffset(160, 40)
-    wm.Position = UDim2.new(0, 20, 1, -60)
-    wm.BackgroundColor3 = BG
-    wm.BackgroundTransparency = 0.2
-    wm.BorderSizePixel = 0
-    wm.Parent = gui
-    round(wm, 6)
-    outline(wm)
-
-    local wmBar = Instance.new("Frame")
-    wmBar.Size = UDim2.new(0, 3, 0, 24)
-    wmBar.Position = UDim2.fromOffset(0, 8)
-    wmBar.BackgroundColor3 = ACCENT
-    wmBar.BorderSizePixel = 0
-    wmBar.Parent = wm
-    round(wmBar, 2)
-    table.insert(accentRefs, function() wmBar.BackgroundColor3 = ACCENT end)
-
-    local wmT = Instance.new("TextLabel")
-    wmT.Size = UDim2.new(1, -16, 0, 16)
-    wmT.Position = UDim2.fromOffset(12, 4)
-    wmT.BackgroundTransparency = 1
-    wmT.Text = "fatality"
-    wmT.TextColor3 = TEXT
-    wmT.TextXAlignment = Enum.TextXAlignment.Left
-    wmT.Font = Enum.Font.GothamBold
-    wmT.TextSize = 11
-    wmT.Parent = wm
-
-    local wmS = Instance.new("TextLabel")
-    wmS.Size = UDim2.new(1, -16, 0, 13)
-    wmS.Position = UDim2.fromOffset(12, 20)
-    wmS.BackgroundTransparency = 1
-    wmS.Text = "-- fps"
-    wmS.TextColor3 = DIM
-    wmS.TextXAlignment = Enum.TextXAlignment.Left
-    wmS.Font = Enum.Font.Gotham
-    wmS.TextSize = 10
-    wmS.Parent = wm
-
-    local fCount, fTime = 0, 0
-    RunService.RenderStepped:Connect(function(dt)
-        if not gui.Parent then return end
-        fCount, fTime = fCount + 1, fTime + dt
-        if fTime >= 0.5 then
-            wmS.Text = string.format("%d fps", math.floor(fCount / fTime + 0.5))
-            fCount, fTime = 0, 0
-        end
-    end)
-
-    -- ===== DRAG (absolute-position based, no viewport math) =====
-    local moveConn, upConn
-
-    local function isPress(i)
-        return i.UserInputType == Enum.UserInputType.MouseButton1
-            or i.UserInputType == Enum.UserInputType.Touch
-    end
-
-    header.InputBegan:Connect(function(i)
-        if not isPress(i) then return end
-        if moveConn then moveConn:Disconnect() end
-        if upConn then upConn:Disconnect() end
-
-        local origin = i.Position
-        local startAbs = panel.AbsolutePosition
-
-        moveConn = UIS.InputChanged:Connect(function(m)
-            if m.UserInputType == Enum.UserInputType.MouseMovement
-                or m.UserInputType == Enum.UserInputType.Touch then
-                clampInto(
-                    startAbs.X + (m.Position.X - origin.X),
-                    startAbs.Y + (m.Position.Y - origin.Y)
-                )
-            end
-        end)
-        upConn = UIS.InputEnded:Connect(function(m)
-            if not isPress(m) then return end
-            if moveConn then moveConn:Disconnect() end
-            if upConn then upConn:Disconnect() end
-            moveConn, upConn = nil, nil
-        end)
-    end)
-
-    -- ===== MINIMIZE =====
-    local expanded = true
-
-    local function setExpanded(v)
-        expanded = v
-        minBtn.Text = expanded and "-" or "+"
-        body.Visible = expanded
-        hr.Visible = expanded
-        TweenService:Create(panel, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            Size = UDim2.fromOffset(PANEL_W, expanded and PANEL_H or HEADER_H),
-        }):Play()
-    end
-
-    minBtn.MouseButton1Click:Connect(function() setExpanded(not expanded) end)
-
-    -- ===== KEYS =====
-    UIS.InputBegan:Connect(function(i, gp)
-        if gp then return end
-        if i.KeyCode == Enum.KeyCode.K then
-            gui.Enabled = not gui.Enabled
-        elseif i.KeyCode == Enum.KeyCode.RightShift then
-            resetPos()
-        end
-    end)
-
-    selectTab(1)
+            if animate then
+                TweenService:Create(btn, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = targetBg}):Play()
+            TweenService:Create(knob, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = targetKnobPos}):Play()
+else
+btn.BackgroundColor3 = targetBg
+knob.Position = targetKnobPos
 end
-
-build()
+end
+btn.MouseButton1Click:Connect(function()
+state = not state
+config[label] = state
+paint(true)
+if onChange then task.spawn(onChange, state) end
+end)
+paint(false)
+return row
+end
+-- ===== НАПОЛНЕНИЕ ВКЛАДКИ VISUALS =====
+-- Добавляем наш интерактивный переключатель ESP во вкладку Visuals!
+addToggle(pages["Visuals"], "Player ESP", false, function(enabled)
+toggleESP(enabled)
+end)
+-- Перетаскивание интерфейса мышкой (Drag Logic)
+local dragging, dragInput, dragStart, startPos
+header.InputBegan:Connect(function(input)
+if input.UserInputType == Enum.UserInputType.MouseButton1 then
+dragging = true
+dragStart = input.Position
+startPos = panel.Position
+input.Changed:Connect(function()
+if input.UserInputState == Enum.UserInputState.End then dragging = false end
+end)
+end
+end)
+header.InputChanged:Connect(function(input)
+if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end
+end)
+UIS.InputChanged:Connect(function(input)
+if input == dragInput and dragging then
+local delta = input.Position - dragStart
+panel.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+end)
+-- Сворачивание/Разворачивание (Minimize Logic)
+minBtn.MouseButton1Click:Connect(function()
+expanded = not expanded
+body.Visible = expanded
+panel.Size = expanded and UDim2.fromOffset(PANEL_W, PANEL_H) or UDim2.fromOffset(PANEL_W, HEADER_H + 1)
+minBtn.Text = expanded and "-" or "+"
+end)
+-- Переключатель видимости меню по кнопке Insert
+UIS.InputBegan:Connect(function(input, gpe)
+if not gpe and input.KeyCode == Enum.KeyCode.Insert then
+gui.Enabled = not gui.Enabled
+end
+end)
+end
+-- Инициализация
+task.spawn(build)
