@@ -311,7 +311,7 @@ local function esp(state)
         local gui = Instance.new("ScreenGui")
         gui.Name = "fatality_esp"
         gui.ResetOnSpawn = false
-        gui.IgnoreGuiInset = false
+        gui.IgnoreGuiInset = true
         gui.DisplayOrder = 998
         gui.Parent = playerGui
 
