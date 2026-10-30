@@ -21,6 +21,7 @@ local LINE = Color3.fromRGB(50, 50, 58)
 local HP_LOW = Color3.fromRGB(220, 60, 60)
 local HP_HIGH = Color3.fromRGB(80, 220, 100)
 local MAX_DIST = 1500
+local BODY_STUDS = 4.4
 
 local conns = {}
 local function track(c)
@@ -89,7 +90,7 @@ local function toggleChams(state)
 end
 
 ----------------------------------------------------------------
--- ESP (billboard-adorned, no projection math)
+-- ESP
 ----------------------------------------------------------------
 local espGui
 local espEntries = {}
@@ -109,7 +110,7 @@ local function makeEntry(plr, hum, root)
     bb.Adornee = root
     bb.AlwaysOnTop = true
     bb.LightInfluence = 0
-    bb.Size = UDim2.fromScale(2.4, 3.6)
+    bb.Size = UDim2.fromOffset(60, 110)
     bb.StudsOffsetWorldSpace = Vector3.new(0, 0.4, 0)
     bb.Enabled = false
     bb.Parent = espGui
@@ -128,8 +129,8 @@ local function makeEntry(plr, hum, root)
 
     local nameL = Instance.new("TextLabel")
     nameL.AnchorPoint = Vector2.new(0.5, 1)
-    nameL.Size = UDim2.new(0, 200, 0, 14)
-    nameL.Position = UDim2.new(0.5, 0, 0, -2)
+    nameL.Size = UDim2.new(0, 220, 0, 14)
+    nameL.Position = UDim2.new(0.5, 0, 0, -3)
     nameL.BackgroundTransparency = 1
     nameL.Text = plr.Name
     nameL.TextColor3 = ACCENT
@@ -140,8 +141,8 @@ local function makeEntry(plr, hum, root)
 
     local distL = Instance.new("TextLabel")
     distL.AnchorPoint = Vector2.new(0.5, 0)
-    distL.Size = UDim2.new(0, 200, 0, 12)
-    distL.Position = UDim2.new(0.5, 0, 1, 2)
+    distL.Size = UDim2.new(0, 220, 0, 12)
+    distL.Position = UDim2.new(0.5, 0, 1, 3)
     distL.BackgroundTransparency = 1
     distL.TextColor3 = Color3.fromRGB(235, 235, 240)
     distL.TextStrokeTransparency = 0
@@ -186,6 +187,9 @@ local function stepESP()
     local myRoot = me and me:FindFirstChild("HumanoidRootPart")
     local origin = myRoot and myRoot.Position or cam.CFrame.Position
 
+    local pxPerStud = (cam.ViewportSize.Y * 0.5)
+        / math.tan(math.rad(cam.FieldOfView) * 0.5)
+
     local now = os.clock()
     local doText = now - lastText >= 0.15
     if doText then lastText = now end
@@ -194,12 +198,17 @@ local function stepESP()
         if not char.Parent or not e.root.Parent or not e.hum.Parent then
             dropEntry(char)
         else
-            local d = (origin - e.root.Position).Magnitude
+            local d = math.max((origin - e.root.Position).Magnitude, 1)
             local show = e.hum.Health > 0 and d <= MAX_DIST
 
             if show ~= e.shown then
                 e.shown = show
                 e.bb.Enabled = show
+            end
+
+            if show then
+                local h = math.clamp((BODY_STUDS / d) * pxPerStud, 10, 1400)
+                e.bb.Size = UDim2.fromOffset(h * 0.55, h)
             end
 
             if show and doText then
