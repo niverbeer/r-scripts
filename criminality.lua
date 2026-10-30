@@ -18,12 +18,6 @@ local DIM = Color3.fromRGB(150, 150, 158)
 local OFF = Color3.fromRGB(45, 45, 52)
 local LINE = Color3.fromRGB(50, 50, 58)
 
-local HP_LOW = Color3.fromRGB(220, 60, 60)
-local HP_HIGH = Color3.fromRGB(80, 220, 100)
-local MAX_DIST = 1500
-local BODY_STUDS = 4.6
-local BOX_W_RATIO = 0.6
-
 local conns = {}
 local function track(c)
     table.insert(conns, c)
@@ -52,147 +46,135 @@ end
 ----------------------------------------------------------------
 -- CHAMS
 ----------------------------------------------------------------
-local chamsOn = false
+local chamsActive = false
+local chamsConns = {}
 
-local function dropHighlight(plr)
-    local char = plr.Character
-    if not char then return end
-    local hl = char:FindFirstChild("ESP_Highlight")
+local function removeHighlight(plr)
+    if not plr.Character then return end
+    local hl = plr.Character:FindFirstChild("ESP_Highlight")
     if hl then hl:Destroy() end
 end
 
-local function makeHighlight(char)
-    if not chamsOn or not char.Parent then return end
-    if not char:FindFirstChild("HumanoidRootPart") then return end
-    if char:FindFirstChild("ESP_Highlight") then return end
-    local hl = Instance.new("Highlight")
-    hl.Name = "ESP_Highlight"
-    hl.FillColor = ACCENT
-    hl.FillTransparency = 0.5
-    hl.OutlineColor = Color3.new(1, 1, 1)
-    hl.OutlineTransparency = 0
-    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    hl.Parent = char
+local function setupHighlight(character)
+    if not chamsActive then return end
+
+    if not character:FindFirstChild("HumanoidRootPart") then
+        character:WaitForChild("HumanoidRootPart", 10)
+    end
+
+    if not chamsActive or not character.Parent then return end
+
+    if not character:FindFirstChild("ESP_Highlight") then
+        local hl = Instance.new("Highlight")
+        hl.Name = "ESP_Highlight"
+        hl.FillColor = ACCENT
+        hl.FillTransparency = 0.5
+        hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+        hl.OutlineTransparency = 0
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.Parent = character
+    end
 end
 
 local function toggleChams(state)
-    chamsOn = state
+    chamsActive = state
+
     if state then
         local function apply(plr)
             if plr == player then return end
-            if plr.Character then task.spawn(makeHighlight, plr.Character) end
-            track(plr.CharacterAdded:Connect(makeHighlight))
+            if plr.Character then
+                task.spawn(setupHighlight, plr.Character)
+            end
+            table.insert(chamsConns, plr.CharacterAdded:Connect(setupHighlight))
         end
-        for _, plr in ipairs(Players:GetPlayers()) do apply(plr) end
-        track(Players.PlayerAdded:Connect(apply))
+
+        for _, plr in ipairs(Players:GetPlayers()) do
+            apply(plr)
+        end
+
+        table.insert(chamsConns, Players.PlayerAdded:Connect(apply))
     else
-        for _, plr in ipairs(Players:GetPlayers()) do dropHighlight(plr) end
+        for _, conn in ipairs(chamsConns) do
+            conn:Disconnect()
+        end
+        table.clear(chamsConns)
+        for _, plr in ipairs(Players:GetPlayers()) do
+            removeHighlight(plr)
+        end
     end
 end
 
 ----------------------------------------------------------------
--- ESP
+-- ESP BOXES
 ----------------------------------------------------------------
-local espGui
-local espEntries = {}
-local espSession = 0
+local PLAYER_COL = ACCENT
+local HP_LOW = Color3.fromRGB(220, 60, 60)
+local HP_HIGH = Color3.fromRGB(80, 220, 100)
 
-local function dropEntry(char)
-    local e = espEntries[char]
-    if e then
-        e.bb:Destroy()
-        espEntries[char] = nil
+local MAX_DIST = 1500
+local TEXT_INTERVAL = 0.15
+local TOP_OFFSET = Vector3.new(0, 2.7, 0)
+local BOTTOM_OFFSET = Vector3.new(0, 3.1, 0)
+
+local espState = {
+    gui = nil,
+    session = 0,
+    entities = {},
+    conns = {},
+}
+
+local lastTextUpdate = 0
+
+local function removeEntry(model)
+    local entry = espState.entities[model]
+
+    if entry then
+        entry.box:Destroy()
+        espState.entities[model] = nil
     end
 end
 
-local function bracket(parent, xa, ya)
-    local anchor = Vector2.new(xa, ya)
-    local pos = UDim2.new(xa, 0, ya, 0)
-
-    local h = Instance.new("Frame")
-    h.AnchorPoint = anchor
-    h.Size = UDim2.fromOffset(9, 2)
-    h.Position = pos
-    h.BackgroundColor3 = ACCENT
-    h.BorderSizePixel = 0
-    h.Parent = parent
-
-    local v = Instance.new("Frame")
-    v.AnchorPoint = anchor
-    v.Size = UDim2.fromOffset(2, 9)
-    v.Position = pos
-    v.BackgroundColor3 = ACCENT
-    v.BorderSizePixel = 0
-    v.Parent = parent
-end
-
-local function makeEntry(plr, hum, root)
-    local bb = Instance.new("BillboardGui")
-    bb.Name = "FatalityESP"
-    bb.Adornee = root
-    bb.AlwaysOnTop = true
-    bb.LightInfluence = 0
-    bb.Size = UDim2.fromOffset(70, 120)
-    bb.StudsOffsetWorldSpace = Vector3.new(0, 0.4, 0)
-    bb.Enabled = false
-    bb.Parent = espGui
-
+local function createEntry(plr, humanoid, root)
     local box = Instance.new("Frame")
-    box.Size = UDim2.fromScale(1, 1)
-    box.BackgroundColor3 = ACCENT
-    box.BackgroundTransparency = 0.88
+    box.BackgroundTransparency = 1
     box.BorderSizePixel = 0
-    box.Parent = bb
+    box.Visible = false
+    box.Parent = espState.gui
 
-    local ol = Instance.new("UIStroke")
-    ol.Color = ACCENT
-    ol.Thickness = 1.5
-    ol.Transparency = 0.25
-    ol.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    ol.Parent = box
+    local outline = Instance.new("UIStroke")
+    outline.Color = PLAYER_COL
+    outline.Thickness = 1.5
+    outline.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    outline.Parent = box
 
-    bracket(box, 0, 0)
-    bracket(box, 1, 0)
-    bracket(box, 0, 1)
-    bracket(box, 1, 1)
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Size = UDim2.new(1, 60, 0, 14)
+    nameLabel.Position = UDim2.new(0, -30, 0, -16)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Text = plr.Name
+    nameLabel.TextColor3 = PLAYER_COL
+    nameLabel.TextStrokeTransparency = 0
+    nameLabel.Font = Enum.Font.GothamBold
+    nameLabel.TextSize = 12
+    nameLabel.Parent = box
 
-    local nameL = Instance.new("TextLabel")
-    nameL.AnchorPoint = Vector2.new(0.5, 1)
-    nameL.Size = UDim2.new(0, 240, 0, 15)
-    nameL.Position = UDim2.new(0.5, 0, 0, -4)
-    nameL.BackgroundTransparency = 1
-    nameL.Text = plr.Name
-    nameL.TextColor3 = ACCENT
-    nameL.TextStrokeTransparency = 0
-    nameL.TextStrokeColor3 = Color3.new(0, 0, 0)
-    nameL.Font = Enum.Font.GothamBold
-    nameL.TextSize = 13
-    nameL.Parent = bb
+    local distanceLabel = Instance.new("TextLabel")
+    distanceLabel.Size = UDim2.new(1, 60, 0, 12)
+    distanceLabel.Position = UDim2.new(0, -30, 1, 2)
+    distanceLabel.BackgroundTransparency = 1
+    distanceLabel.Text = ""
+    distanceLabel.TextColor3 = Color3.fromRGB(235, 235, 240)
+    distanceLabel.TextStrokeTransparency = 0
+    distanceLabel.Font = Enum.Font.GothamMedium
+    distanceLabel.TextSize = 11
+    distanceLabel.Parent = box
 
-    local distL = Instance.new("TextLabel")
-    distL.AnchorPoint = Vector2.new(0.5, 0)
-    distL.Size = UDim2.new(0, 240, 0, 12)
-    distL.Position = UDim2.new(0.5, 0, 1, 4)
-    distL.BackgroundTransparency = 1
-    distL.TextColor3 = Color3.fromRGB(235, 235, 240)
-    distL.TextStrokeTransparency = 0.3
-    distL.TextStrokeColor3 = Color3.new(0, 0, 0)
-    distL.Font = Enum.Font.GothamMedium
-    distL.TextSize = 11
-    distL.Parent = bb
-
-    local hpBg = Instance.new("Frame")
-    hpBg.AnchorPoint = Vector2.new(0, 1)
-    hpBg.Size = UDim2.new(0, 3, 1, -8)
-    hpBg.Position = UDim2.new(0, 4, 1, -4)
-    hpBg.BackgroundColor3 = Color3.fromRGB(10, 10, 12)
-    hpBg.BackgroundTransparency = 0.15
-    hpBg.BorderSizePixel = 0
-    hpBg.Parent = box
-
-    local hpCorner = Instance.new("UICorner")
-    hpCorner.CornerRadius = UDim.new(1, 0)
-    hpCorner.Parent = hpBg
+    local hpBackground = Instance.new("Frame")
+    hpBackground.Size = UDim2.new(0, 3, 1, 0)
+    hpBackground.Position = UDim2.new(0, -6, 0, 0)
+    hpBackground.BackgroundColor3 = Color3.new(0, 0, 0)
+    hpBackground.BorderSizePixel = 0
+    hpBackground.Parent = box
 
     local hpFill = Instance.new("Frame")
     hpFill.AnchorPoint = Vector2.new(0, 1)
@@ -200,79 +182,91 @@ local function makeEntry(plr, hum, root)
     hpFill.Size = UDim2.new(1, 0, 1, 0)
     hpFill.BackgroundColor3 = HP_HIGH
     hpFill.BorderSizePixel = 0
-    hpFill.Parent = hpBg
-
-    local fillCorner = Instance.new("UICorner")
-    fillCorner.CornerRadius = UDim.new(1, 0)
-    fillCorner.Parent = hpFill
+    hpFill.Parent = hpBackground
 
     return {
-        plr = plr,
-        hum = hum,
+        humanoid = humanoid,
         root = root,
-        bb = bb,
-        dist = distL,
-        hp = hpFill,
-        shown = false,
+        box = box,
+        dist = distanceLabel,
+        hpFill = hpFill,
+        visible = false,
         lastDist = -1,
         lastHp = -1,
     }
 end
 
-local lastText = 0
+local function updateESP()
+    local camera = workspace.CurrentCamera
+    if not camera then return end
 
-local function stepESP()
-    local cam = workspace.CurrentCamera
-    if not cam or not espGui then return end
-
-    local me = player.Character
-    local myRoot = me and me:FindFirstChild("HumanoidRootPart")
-    local origin = myRoot and myRoot.Position or cam.CFrame.Position
-
-    local pxPerStud = (cam.ViewportSize.Y * 0.5)
-        / math.tan(math.rad(cam.FieldOfView) * 0.5)
+    local myChar = player.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local origin = myRoot and myRoot.Position or camera.CFrame.Position
 
     local now = os.clock()
-    local doText = now - lastText >= 0.15
-    if doText then lastText = now end
+    local doText = now - lastTextUpdate >= TEXT_INTERVAL
 
-    for char, e in pairs(espEntries) do
-        local valid = char.Parent
-            and e.plr.Parent == Players
-            and e.plr.Character == char
-            and e.root.Parent
-            and e.hum.Parent
+    if doText then
+        lastTextUpdate = now
+    end
 
-        if not valid then
-            dropEntry(char)
+    for model, entry in pairs(espState.entities) do
+        local root = entry.root
+        local humanoid = entry.humanoid
+
+        if not model.Parent or not root.Parent or not humanoid.Parent then
+            removeEntry(model)
         else
-            local d = math.max((origin - e.root.Position).Magnitude, 1)
-            local show = e.hum.Health > 0 and d <= MAX_DIST
+            local distance = (origin - root.Position).Magnitude
+            local show = false
 
-            if show ~= e.shown then
-                e.shown = show
-                e.bb.Enabled = show
+            if humanoid.Health > 0 and distance <= MAX_DIST then
+                local top = camera:WorldToViewportPoint(root.Position + TOP_OFFSET)
+                local bottom = camera:WorldToViewportPoint(root.Position - BOTTOM_OFFSET)
+
+                if top.Z > 0 and bottom.Z > 0 then
+                    show = true
+
+                    local height = math.floor(math.abs(bottom.Y - top.Y))
+                    local width = math.floor(height * 0.55)
+                    local centerX = (top.X + bottom.X) / 2
+
+                    entry.box.Position = UDim2.fromOffset(
+                        math.floor(centerX - width / 2),
+                        math.floor(top.Y)
+                    )
+
+                    entry.box.Size = UDim2.fromOffset(width, height)
+
+                    if doText then
+                        local roundedDistance = math.floor(distance)
+
+                        if roundedDistance ~= entry.lastDist then
+                            entry.lastDist = roundedDistance
+                            entry.dist.Text = "[" .. roundedDistance .. " studs]"
+                        end
+
+                        local hp = math.clamp(
+                            humanoid.Health / math.max(humanoid.MaxHealth, 1),
+                            0,
+                            1
+                        )
+
+                        local quantizedHp = math.floor(hp * 20)
+
+                        if quantizedHp ~= entry.lastHp then
+                            entry.lastHp = quantizedHp
+                            entry.hpFill.Size = UDim2.new(1, 0, hp, 0)
+                            entry.hpFill.BackgroundColor3 = HP_LOW:Lerp(HP_HIGH, hp)
+                        end
+                    end
+                end
             end
 
-            if show then
-                local h = math.clamp((BODY_STUDS / d) * pxPerStud, 12, 1400)
-                e.bb.Size = UDim2.fromOffset(h * BOX_W_RATIO, h)
-            end
-
-            if show and doText then
-                local rd = math.floor(d)
-                if rd ~= e.lastDist then
-                    e.lastDist = rd
-                    e.dist.Text = "[" .. rd .. " studs]"
-                end
-
-                local frac = math.clamp(e.hum.Health / math.max(e.hum.MaxHealth, 1), 0, 1)
-                local q = math.floor(frac * 20)
-                if q ~= e.lastHp then
-                    e.lastHp = q
-                    e.hp.Size = UDim2.new(1, 0, frac, 0)
-                    e.hp.BackgroundColor3 = HP_LOW:Lerp(HP_HIGH, frac)
-                end
+            if show ~= entry.visible then
+                entry.visible = show
+                entry.box.Visible = show
             end
         end
     end
@@ -281,45 +275,73 @@ end
 local function trackPlayer(plr, session)
     if plr == player then return end
 
-    local function onChar(char)
+    local function onCharacter(character)
         task.spawn(function()
-            local hum = char:WaitForChild("Humanoid", 10)
-            local root = char:WaitForChild("HumanoidRootPart", 10)
-            if session ~= espSession or not espGui then return end
-            if plr.Character ~= char then return end
-            if not hum or not root or not char.Parent then return end
-            dropEntry(char)
-            espEntries[char] = makeEntry(plr, hum, root)
+            local humanoid = character:WaitForChild("Humanoid", 10)
+            local root = character:WaitForChild("HumanoidRootPart", 10)
+
+            if session ~= espState.session or not espState.gui then
+                return
+            end
+
+            if not humanoid or not root or not character.Parent then
+                return
+            end
+
+            removeEntry(character)
+            espState.entities[character] = createEntry(plr, humanoid, root)
         end)
     end
 
-    if plr.Character then onChar(plr.Character) end
-    track(plr.CharacterAdded:Connect(onChar))
-    track(plr.CharacterRemoving:Connect(dropEntry))
+    if plr.Character then
+        onCharacter(plr.Character)
+    end
+
+    table.insert(espState.conns, plr.CharacterAdded:Connect(onCharacter))
+    table.insert(espState.conns, plr.CharacterRemoving:Connect(removeEntry))
 end
 
 local function esp(state)
     if state then
-        if espGui then return end
-        espSession += 1
-        local session = espSession
+        if espState.gui then return end
 
-        espGui = Instance.new("ScreenGui")
-        espGui.Name = "fatality_esp"
-        espGui.ResetOnSpawn = false
-        espGui.IgnoreGuiInset = true
-        espGui.DisplayOrder = 998
-        espGui.Parent = playerGui
+        espState.session += 1
+        local session = espState.session
 
-        for _, plr in ipairs(Players:GetPlayers()) do trackPlayer(plr, session) end
-        track(Players.PlayerAdded:Connect(function(p) trackPlayer(p, session) end))
-        track(RunService.RenderStepped:Connect(stepESP))
+        local gui = Instance.new("ScreenGui")
+        gui.Name = "fatality_esp"
+        gui.ResetOnSpawn = false
+        gui.IgnoreGuiInset = false
+        gui.DisplayOrder = 998
+        gui.Parent = playerGui
+
+        espState.gui = gui
+
+        for _, plr in ipairs(Players:GetPlayers()) do
+            trackPlayer(plr, session)
+        end
+
+        table.insert(
+            espState.conns,
+            Players.PlayerAdded:Connect(function(plr)
+                trackPlayer(plr, session)
+            end)
+        )
+
+        table.insert(espState.conns, RunService.RenderStepped:Connect(updateESP))
     else
-        espSession += 1
-        table.clear(espEntries)
-        if espGui then
-            espGui:Destroy()
-            espGui = nil
+        espState.session += 1
+
+        for _, conn in ipairs(espState.conns) do
+            conn:Disconnect()
+        end
+
+        table.clear(espState.conns)
+        table.clear(espState.entities)
+
+        if espState.gui then
+            espState.gui:Destroy()
+            espState.gui = nil
         end
     end
 end
