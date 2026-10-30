@@ -21,8 +21,6 @@ local LINE = Color3.fromRGB(50, 50, 58)
 local HP_LOW = Color3.fromRGB(220, 60, 60)
 local HP_HIGH = Color3.fromRGB(80, 220, 100)
 local MAX_DIST = 1500
-local TOP_OFFSET = Vector3.new(0, 2.7, 0)
-local BOTTOM_OFFSET = Vector3.new(0, 3.1, 0)
 
 local conns = {}
 local function track(c)
@@ -46,7 +44,7 @@ local function screenCenter()
     local cam = workspace.CurrentCamera
     local vp = cam and cam.ViewportSize or Vector2.new(1280, 720)
     local ins = inset()
-    return Vector2.new(vp.X / 2 + ins.X / 2, vp.Y / 2 + ins.Y / 2), vp
+    return Vector2.new(vp.X / 2 + ins.X / 2, vp.Y / 2 + ins.Y / 2)
 end
 
 ----------------------------------------------------------------
@@ -91,7 +89,7 @@ local function toggleChams(state)
 end
 
 ----------------------------------------------------------------
--- ESP
+-- ESP (billboard-adorned, no projection math)
 ----------------------------------------------------------------
 local espGui
 local espEntries = {}
@@ -100,17 +98,27 @@ local espSession = 0
 local function dropEntry(char)
     local e = espEntries[char]
     if e then
-        e.box:Destroy()
+        e.bb:Destroy()
         espEntries[char] = nil
     end
 end
 
 local function makeEntry(plr, hum, root)
+    local bb = Instance.new("BillboardGui")
+    bb.Name = "FatalityESP"
+    bb.Adornee = root
+    bb.AlwaysOnTop = true
+    bb.LightInfluence = 0
+    bb.Size = UDim2.fromScale(2.4, 3.6)
+    bb.StudsOffsetWorldSpace = Vector3.new(0, 0.4, 0)
+    bb.Enabled = false
+    bb.Parent = espGui
+
     local box = Instance.new("Frame")
+    box.Size = UDim2.fromScale(1, 1)
     box.BackgroundTransparency = 1
     box.BorderSizePixel = 0
-    box.Visible = false
-    box.Parent = espGui
+    box.Parent = bb
 
     local ol = Instance.new("UIStroke")
     ol.Color = ACCENT
@@ -119,32 +127,34 @@ local function makeEntry(plr, hum, root)
     ol.Parent = box
 
     local nameL = Instance.new("TextLabel")
-    nameL.Size = UDim2.new(1, 60, 0, 14)
-    nameL.Position = UDim2.new(0, -30, 0, -16)
+    nameL.AnchorPoint = Vector2.new(0.5, 1)
+    nameL.Size = UDim2.new(0, 200, 0, 14)
+    nameL.Position = UDim2.new(0.5, 0, 0, -2)
     nameL.BackgroundTransparency = 1
     nameL.Text = plr.Name
     nameL.TextColor3 = ACCENT
     nameL.TextStrokeTransparency = 0
     nameL.Font = Enum.Font.GothamBold
     nameL.TextSize = 12
-    nameL.Parent = box
+    nameL.Parent = bb
 
     local distL = Instance.new("TextLabel")
-    distL.Size = UDim2.new(1, 60, 0, 12)
-    distL.Position = UDim2.new(0, -30, 1, 2)
+    distL.AnchorPoint = Vector2.new(0.5, 0)
+    distL.Size = UDim2.new(0, 200, 0, 12)
+    distL.Position = UDim2.new(0.5, 0, 1, 2)
     distL.BackgroundTransparency = 1
     distL.TextColor3 = Color3.fromRGB(235, 235, 240)
     distL.TextStrokeTransparency = 0
     distL.Font = Enum.Font.GothamMedium
     distL.TextSize = 11
-    distL.Parent = box
+    distL.Parent = bb
 
     local hpBg = Instance.new("Frame")
     hpBg.Size = UDim2.new(0, 3, 1, 0)
     hpBg.Position = UDim2.new(0, -6, 0, 0)
     hpBg.BackgroundColor3 = Color3.new(0, 0, 0)
     hpBg.BorderSizePixel = 0
-    hpBg.Parent = box
+    hpBg.Parent = bb
 
     local hpFill = Instance.new("Frame")
     hpFill.AnchorPoint = Vector2.new(0, 1)
@@ -157,7 +167,7 @@ local function makeEntry(plr, hum, root)
     return {
         hum = hum,
         root = root,
-        box = box,
+        bb = bb,
         dist = distL,
         hp = hpFill,
         shown = false,
@@ -185,41 +195,27 @@ local function stepESP()
             dropEntry(char)
         else
             local d = (origin - e.root.Position).Magnitude
-            local show = false
-
-            if e.hum.Health > 0 and d <= MAX_DIST then
-                local top = cam:WorldToScreenPoint(e.root.Position + TOP_OFFSET)
-                local bot = cam:WorldToScreenPoint(e.root.Position - BOTTOM_OFFSET)
-
-                if top.Z > 0 and bot.Z > 0 then
-                    show = true
-                    local h = math.floor(math.abs(bot.Y - top.Y))
-                    local w = math.floor(h * 0.55)
-                    local cx = (top.X + bot.X) / 2
-
-                    e.box.Position = UDim2.fromOffset(math.floor(cx - w / 2), math.floor(top.Y))
-                    e.box.Size = UDim2.fromOffset(w, h)
-
-                    if doText then
-                        local rd = math.floor(d)
-                        if rd ~= e.lastDist then
-                            e.lastDist = rd
-                            e.dist.Text = "[" .. rd .. " studs]"
-                        end
-                        local frac = math.clamp(e.hum.Health / math.max(e.hum.MaxHealth, 1), 0, 1)
-                        local q = math.floor(frac * 20)
-                        if q ~= e.lastHp then
-                            e.lastHp = q
-                            e.hp.Size = UDim2.new(1, 0, frac, 0)
-                            e.hp.BackgroundColor3 = HP_LOW:Lerp(HP_HIGH, frac)
-                        end
-                    end
-                end
-            end
+            local show = e.hum.Health > 0 and d <= MAX_DIST
 
             if show ~= e.shown then
                 e.shown = show
-                e.box.Visible = show
+                e.bb.Enabled = show
+            end
+
+            if show and doText then
+                local rd = math.floor(d)
+                if rd ~= e.lastDist then
+                    e.lastDist = rd
+                    e.dist.Text = "[" .. rd .. " studs]"
+                end
+
+                local frac = math.clamp(e.hum.Health / math.max(e.hum.MaxHealth, 1), 0, 1)
+                local q = math.floor(frac * 20)
+                if q ~= e.lastHp then
+                    e.lastHp = q
+                    e.hp.Size = UDim2.new(1, 0, frac, 0)
+                    e.hp.BackgroundColor3 = HP_LOW:Lerp(HP_HIGH, frac)
+                end
             end
         end
     end
@@ -384,7 +380,7 @@ local function aimStep(dt)
     local cam = workspace.CurrentCamera
     if not cam then return end
 
-    local center, vp = screenCenter()
+    local center = screenCenter()
 
     aimCircle.Position = UDim2.fromOffset(center.X, center.Y)
     aimCircle.Size = UDim2.fromOffset(Aim.FOV * 2, Aim.FOV * 2)
@@ -849,9 +845,6 @@ local function build()
         return b
     end
 
-    ------------------------------------------------------------
-    -- LEGIT
-    ------------------------------------------------------------
     addToggle(pages["Legit"], "Aim Assist", false, function(on)
         Aim.Enabled = on
         if not on then aiming = false end
@@ -915,9 +908,6 @@ local function build()
 
     refreshKey()
 
-    ------------------------------------------------------------
-    -- RAGE
-    ------------------------------------------------------------
     addToggle(pages["Rage"], "Silent Aim Preview", false, function(on)
         SA.Enabled = on
     end)
@@ -959,15 +949,9 @@ local function build()
         function(v) AA.Pitch = v end,
         -90, 90, 15)
 
-    ------------------------------------------------------------
-    -- VISUALS
-    ------------------------------------------------------------
     addToggle(pages["Visuals"], "ESP (Boxes)", false, function(on) esp(on) end)
     addToggle(pages["Visuals"], "Chams", false, function(on) toggleChams(on) end)
 
-    ------------------------------------------------------------
-    -- MISC
-    ------------------------------------------------------------
     local info = Instance.new("TextLabel")
     info.Size = UDim2.new(1, 0, 0, 48)
     info.BackgroundColor3 = BG2
@@ -996,10 +980,6 @@ local function build()
             RunService:UnbindFromRenderStep("FatalityAimStep")
         end)
         stopSpin()
-        if AA.Enabled then
-            local h = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-            if h then h.AutoRotate = true end
-        end
         clearConns()
         esp(false)
         toggleChams(false)
@@ -1008,9 +988,6 @@ local function build()
         saGui:Destroy()
     end)
 
-    ------------------------------------------------------------
-    -- DRAG
-    ------------------------------------------------------------
     local dragConn, upConn
     local function press(i)
         return i.UserInputType == Enum.UserInputType.MouseButton1
@@ -1042,9 +1019,6 @@ local function build()
         end)
     end)
 
-    ------------------------------------------------------------
-    -- MINIMIZE
-    ------------------------------------------------------------
     minBtn.MouseButton1Click:Connect(function()
         expanded = not expanded
         body.Visible = expanded
@@ -1060,8 +1034,5 @@ local function build()
     end))
 end
 
-----------------------------------------------------------------
--- START
-----------------------------------------------------------------
 build()
 RunService:BindToRenderStep("FatalityAimStep", Enum.RenderPriority.Camera.Value + 1, aimStep)
