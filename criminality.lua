@@ -204,6 +204,9 @@ local function updateESP()
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
     local origin = myRoot and myRoot.Position or camera.CFrame.Position
 
+    local ins = inset()
+    local insX, insY = ins.X, ins.Y
+
     local now = os.clock()
     local doText = now - lastTextUpdate >= TEXT_INTERVAL
 
@@ -233,8 +236,8 @@ local function updateESP()
                     local centerX = (top.X + bottom.X) / 2
 
                     entry.box.Position = UDim2.fromOffset(
-                        math.floor(centerX - width / 2),
-                        math.floor(top.Y)
+                        math.floor(centerX - width / 2 - insX),
+                        math.floor(top.Y - insY)
                     )
 
                     entry.box.Size = UDim2.fromOffset(width, height)
