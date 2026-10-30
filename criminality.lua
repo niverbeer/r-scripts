@@ -21,7 +21,8 @@ local LINE = Color3.fromRGB(50, 50, 58)
 local HP_LOW = Color3.fromRGB(220, 60, 60)
 local HP_HIGH = Color3.fromRGB(80, 220, 100)
 local MAX_DIST = 1500
-local BODY_STUDS = 4.4
+local BODY_STUDS = 4.6
+local BOX_W_RATIO = 0.6
 
 local conns = {}
 local function track(c)
@@ -104,58 +105,94 @@ local function dropEntry(char)
     end
 end
 
+local function bracket(parent, xa, ya)
+    local anchor = Vector2.new(xa, ya)
+    local pos = UDim2.new(xa, 0, ya, 0)
+
+    local h = Instance.new("Frame")
+    h.AnchorPoint = anchor
+    h.Size = UDim2.fromOffset(9, 2)
+    h.Position = pos
+    h.BackgroundColor3 = ACCENT
+    h.BorderSizePixel = 0
+    h.Parent = parent
+
+    local v = Instance.new("Frame")
+    v.AnchorPoint = anchor
+    v.Size = UDim2.fromOffset(2, 9)
+    v.Position = pos
+    v.BackgroundColor3 = ACCENT
+    v.BorderSizePixel = 0
+    v.Parent = parent
+end
+
 local function makeEntry(plr, hum, root)
     local bb = Instance.new("BillboardGui")
     bb.Name = "FatalityESP"
     bb.Adornee = root
     bb.AlwaysOnTop = true
     bb.LightInfluence = 0
-    bb.Size = UDim2.fromOffset(60, 110)
+    bb.Size = UDim2.fromOffset(70, 120)
     bb.StudsOffsetWorldSpace = Vector3.new(0, 0.4, 0)
     bb.Enabled = false
     bb.Parent = espGui
 
     local box = Instance.new("Frame")
     box.Size = UDim2.fromScale(1, 1)
-    box.BackgroundTransparency = 1
+    box.BackgroundColor3 = ACCENT
+    box.BackgroundTransparency = 0.88
     box.BorderSizePixel = 0
     box.Parent = bb
 
     local ol = Instance.new("UIStroke")
     ol.Color = ACCENT
     ol.Thickness = 1.5
+    ol.Transparency = 0.25
     ol.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     ol.Parent = box
 
+    bracket(box, 0, 0)
+    bracket(box, 1, 0)
+    bracket(box, 0, 1)
+    bracket(box, 1, 1)
+
     local nameL = Instance.new("TextLabel")
     nameL.AnchorPoint = Vector2.new(0.5, 1)
-    nameL.Size = UDim2.new(0, 220, 0, 14)
-    nameL.Position = UDim2.new(0.5, 0, 0, -3)
+    nameL.Size = UDim2.new(0, 240, 0, 15)
+    nameL.Position = UDim2.new(0.5, 0, 0, -4)
     nameL.BackgroundTransparency = 1
     nameL.Text = plr.Name
     nameL.TextColor3 = ACCENT
     nameL.TextStrokeTransparency = 0
+    nameL.TextStrokeColor3 = Color3.new(0, 0, 0)
     nameL.Font = Enum.Font.GothamBold
-    nameL.TextSize = 12
+    nameL.TextSize = 13
     nameL.Parent = bb
 
     local distL = Instance.new("TextLabel")
     distL.AnchorPoint = Vector2.new(0.5, 0)
-    distL.Size = UDim2.new(0, 220, 0, 12)
-    distL.Position = UDim2.new(0.5, 0, 1, 3)
+    distL.Size = UDim2.new(0, 240, 0, 12)
+    distL.Position = UDim2.new(0.5, 0, 1, 4)
     distL.BackgroundTransparency = 1
     distL.TextColor3 = Color3.fromRGB(235, 235, 240)
-    distL.TextStrokeTransparency = 0
+    distL.TextStrokeTransparency = 0.3
+    distL.TextStrokeColor3 = Color3.new(0, 0, 0)
     distL.Font = Enum.Font.GothamMedium
     distL.TextSize = 11
     distL.Parent = bb
 
     local hpBg = Instance.new("Frame")
-    hpBg.Size = UDim2.new(0, 3, 1, 0)
-    hpBg.Position = UDim2.new(0, -6, 0, 0)
-    hpBg.BackgroundColor3 = Color3.new(0, 0, 0)
+    hpBg.AnchorPoint = Vector2.new(0, 1)
+    hpBg.Size = UDim2.new(0, 3, 1, -8)
+    hpBg.Position = UDim2.new(0, 4, 1, -4)
+    hpBg.BackgroundColor3 = Color3.fromRGB(10, 10, 12)
+    hpBg.BackgroundTransparency = 0.15
     hpBg.BorderSizePixel = 0
-    hpBg.Parent = bb
+    hpBg.Parent = box
+
+    local hpCorner = Instance.new("UICorner")
+    hpCorner.CornerRadius = UDim.new(1, 0)
+    hpCorner.Parent = hpBg
 
     local hpFill = Instance.new("Frame")
     hpFill.AnchorPoint = Vector2.new(0, 1)
@@ -165,7 +202,12 @@ local function makeEntry(plr, hum, root)
     hpFill.BorderSizePixel = 0
     hpFill.Parent = hpBg
 
+    local fillCorner = Instance.new("UICorner")
+    fillCorner.CornerRadius = UDim.new(1, 0)
+    fillCorner.Parent = hpFill
+
     return {
+        plr = plr,
         hum = hum,
         root = root,
         bb = bb,
@@ -195,7 +237,13 @@ local function stepESP()
     if doText then lastText = now end
 
     for char, e in pairs(espEntries) do
-        if not char.Parent or not e.root.Parent or not e.hum.Parent then
+        local valid = char.Parent
+            and e.plr.Parent == Players
+            and e.plr.Character == char
+            and e.root.Parent
+            and e.hum.Parent
+
+        if not valid then
             dropEntry(char)
         else
             local d = math.max((origin - e.root.Position).Magnitude, 1)
@@ -207,8 +255,8 @@ local function stepESP()
             end
 
             if show then
-                local h = math.clamp((BODY_STUDS / d) * pxPerStud, 10, 1400)
-                e.bb.Size = UDim2.fromOffset(h * 0.55, h)
+                local h = math.clamp((BODY_STUDS / d) * pxPerStud, 12, 1400)
+                e.bb.Size = UDim2.fromOffset(h * BOX_W_RATIO, h)
             end
 
             if show and doText then
@@ -238,6 +286,7 @@ local function trackPlayer(plr, session)
             local hum = char:WaitForChild("Humanoid", 10)
             local root = char:WaitForChild("HumanoidRootPart", 10)
             if session ~= espSession or not espGui then return end
+            if plr.Character ~= char then return end
             if not hum or not root or not char.Parent then return end
             dropEntry(char)
             espEntries[char] = makeEntry(plr, hum, root)
